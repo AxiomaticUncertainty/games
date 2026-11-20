@@ -23,7 +23,12 @@ npm run dev
 
 Open http://localhost:5173. Vite serves the client with hot reload and
 forwards server paths (`/login`, `/logout`, `/healthz`) to the Python server
-on port 8000; the list is in `vite.config.ts`. Visit `/login` to sign in.
+on port 8000; the list is in `vite.config.ts`.
+
+The password gate applies in development too: before Vite serves anything, it
+asks the Python server's gate whether the request may go through, and passes on
+its answer if not (`dev/passwordGate.ts`). So you're sent to `/login` as in
+production, and the Python server has to be running.
 
 ## Common tasks
 
@@ -53,4 +58,5 @@ src/App.tsx       the home page
 src/games.ts      the list of games shown on the home page
 src/styles.css    site-wide styles; colors match the login page
 src/*.test.tsx    tests, next to the code they cover
+dev/              development-only Vite plugins
 ```
