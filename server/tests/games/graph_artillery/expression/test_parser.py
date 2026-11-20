@@ -25,43 +25,32 @@ def tree(source: str) -> Node:
     return parse(source).tree
 
 
-def op(operator: Operator, left: Node, right: Node) -> BinaryOp:
-    return BinaryOp(operator, left, right)
-
-
-def num(value: float) -> Number:
-    return Number(value)
-
-
 class TestStructure:
     def test_multiplication_binds_tighter_than_addition(self) -> None:
-        assert tree("1 + 2 * x") == op(ADD, num(1), op(MUL, num(2), X))
+        assert tree("1 + 2 * x") == BinaryOp(ADD, Number(1), BinaryOp(MUL, Number(2), X))
 
     def test_same_precedence_groups_left_to_right(self) -> None:
-        assert tree("x - 1 - 2") == op(SUB, op(SUB, X, num(1)), num(2))
-        assert tree("x / 2 / 4") == op(DIV, op(DIV, X, num(2)), num(4))
+        assert tree("x - 1 - 2") == BinaryOp(SUB, BinaryOp(SUB, X, Number(1)), Number(2))
+        assert tree("x / 2 / 4") == BinaryOp(DIV, BinaryOp(DIV, X, Number(2)), Number(4))
 
     def test_power_groups_right_to_left(self) -> None:
-        assert tree("2^3^x") == op(POW, num(2), op(POW, num(3), X))
+        assert tree("2^3^x") == BinaryOp(POW, Number(2), BinaryOp(POW, Number(3), X))
 
     def test_negation_applies_after_power(self) -> None:
-        assert tree("-x^2") == Negate(op(POW, X, num(2)))
+        assert tree("-x^2") == Negate(BinaryOp(POW, X, Number(2)))
 
     def test_exponent_may_be_negative(self) -> None:
-        assert tree("2^-x") == op(POW, num(2), Negate(X))
-
-    def test_unary_plus_changes_nothing(self) -> None:
-        assert tree("+x") == X
+        assert tree("2^-x") == BinaryOp(POW, Number(2), Negate(X))
 
     def test_parentheses_override_precedence(self) -> None:
-        assert tree("(1 + 2) * x") == op(MUL, op(ADD, num(1), num(2)), X)
+        assert tree("(1 + 2) * x") == BinaryOp(MUL, BinaryOp(ADD, Number(1), Number(2)), X)
 
     def test_function_call(self) -> None:
-        assert tree("sin(x + 1)") == Call("sin", op(ADD, X, num(1)))
+        assert tree("sin(x + 1)") == Call("sin", BinaryOp(ADD, X, Number(1)))
 
     def test_constants_become_numbers(self) -> None:
-        assert tree("pi") == num(math.pi)
-        assert tree("e") == num(math.e)
+        assert tree("pi") == Number(math.pi)
+        assert tree("e") == Number(math.e)
 
     def test_names_are_case_insensitive(self) -> None:
         assert tree("SIN(X) + Pi") == tree("sin(x) + pi")
@@ -83,8 +72,8 @@ class TestImplicitMultiplication:
         assert tree(implicit) == tree(explicit)
 
     def test_binds_like_explicit_multiplication(self) -> None:
-        assert tree("2x^2") == op(MUL, num(2), op(POW, X, num(2)))
-        assert tree("1 + 2x") == op(ADD, num(1), op(MUL, num(2), X))
+        assert tree("2x^2") == BinaryOp(MUL, Number(2), BinaryOp(POW, X, Number(2)))
+        assert tree("1 + 2x") == BinaryOp(ADD, Number(1), BinaryOp(MUL, Number(2), X))
 
     def test_number_after_a_value_is_an_error(self) -> None:
         with pytest.raises(ParseError, match="'2'"):
@@ -105,6 +94,7 @@ class TestErrors:
             ("y + 1", "Unknown name 'y'", 0),
             ("sinx", "Unknown name 'sinx'", 0),
             ("x * * 2", "found '\\*'", 4),
+            ("+x", "found '\\+'", 0),
             ("1.2.3", "Unexpected '.3'", 3),
         ],
     )

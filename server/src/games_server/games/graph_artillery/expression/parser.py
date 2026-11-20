@@ -4,7 +4,7 @@ The grammar, from lowest precedence to highest. Each rule is one method below.
 
     sum      := product (("+" | "-") product)*
     product  := unary (("*" | "/") unary | <implicit> power)*
-    unary    := ("+" | "-") unary | power
+    unary    := "-" unary | power
     power    := primary ("^" unary)?
     primary  := NUMBER | "x" | CONSTANT | FUNCTION "(" sum ")" | "(" sum ")"
 
@@ -79,9 +79,6 @@ class _Parser:
         if self._current.kind is Kind.MINUS:
             self._advance()
             return Negate(self.unary())
-        if self._current.kind is Kind.PLUS:
-            self._advance()
-            return self.unary()
         return self.power()
 
     def power(self) -> Node:

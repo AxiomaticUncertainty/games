@@ -33,15 +33,17 @@ _NUMBER = re.compile(r"[0-9]+\.?[0-9]*|\.[0-9]+")
 _NAME = re.compile(r"[A-Za-z]+")
 
 _SYMBOLS = {
-    "**": Kind.CARET,  # accepted as a synonym for ^, since programmers type it
     "+": Kind.PLUS,
     "-": Kind.MINUS,
     "*": Kind.STAR,
     "/": Kind.SLASH,
     "^": Kind.CARET,
+    "**": Kind.CARET,  # accepted as a synonym for ^, since programmers type it
     "(": Kind.LEFT_PAREN,
     ")": Kind.RIGHT_PAREN,
 }
+# Longest first, so "**" is read as one symbol rather than two "*".
+_SYMBOLS_LONGEST_FIRST = sorted(_SYMBOLS.items(), key=lambda item: len(item[0]), reverse=True)
 
 
 def tokenize(source: str) -> list[Token]:
@@ -59,8 +61,7 @@ def tokenize(source: str) -> list[Token]:
 
 
 def _read_token(source: str, position: int) -> Token:
-    # Symbols are checked longest first, so "**" wins over "*".
-    for symbol, kind in _SYMBOLS.items():
+    for symbol, kind in _SYMBOLS_LONGEST_FIRST:
         if source.startswith(symbol, position):
             return Token(kind, symbol, position)
     if number := _NUMBER.match(source, position):
