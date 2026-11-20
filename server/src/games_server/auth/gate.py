@@ -25,7 +25,7 @@ class PasswordGate:
         self._public_paths = public_paths
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if not self._requires_login(scope):
+        if self._may_pass(scope):
             await self._app(scope, receive, send)
             return
 
@@ -36,13 +36,20 @@ class PasswordGate:
 
         await _login_required_response(scope)(scope, receive, send)
 
-    def _requires_login(self, scope: Scope) -> bool:
+    def _may_pass(self, scope: Scope) -> bool:
+        """Whether this connection may reach the app.
+
+        It may if it's for a public path, or if it carries a valid session
+        cookie, meaning the visitor has already entered the password.
+        """
+        # Lifespan events (server startup and shutdown) aren't visitors, and
+        # their scope has no path or headers, so they must be checked first.
         if scope["type"] not in ("http", "websocket"):
-            return False  # e.g. ASGI lifespan events
-        if scope["path"] in self._public_paths:
-            return False
-        cookie = HTTPConnection(scope).cookies.get(SESSION_COOKIE)
-        return not self._tokens.is_valid(cookie)
+            return True
+
+        is_public = scope["path"] in self._public_paths
+        has_session = self._tokens.is_valid(HTTPConnection(scope).cookies.get(SESSION_COOKIE))
+        return is_public or has_session
 
 
 def _login_required_response(scope: Scope) -> Response:

@@ -1,6 +1,7 @@
 """End-to-end behaviour of the password gate, through the real app."""
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -100,3 +101,10 @@ def test_changing_the_password_logs_everyone_out(client: TestClient, settings: S
 
         assert after_restart.get("/healthz").status_code == 200
         assert after_restart.get("/", follow_redirects=False).status_code == 303
+
+
+def test_server_startup_and_shutdown_pass_through_the_gate(app: FastAPI) -> None:
+    # Entering and leaving the client runs the ASGI lifespan events, whose
+    # scope has no path. The gate must let them through without inspecting it.
+    with TestClient(app):
+        pass

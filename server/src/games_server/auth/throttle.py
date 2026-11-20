@@ -36,11 +36,11 @@ class LoginThrottle:
         self._failures[client].append(self._clock())
 
     def _forget_expired(self, client: str) -> None:
+        # `failures` is None for a client with no recorded failures; the loop
+        # and the cleanup below both treat that the same as an empty deque.
         failures = self._failures.get(client)
-        if failures is None:
-            return
         cutoff = self._clock() - self._window_seconds
         while failures and failures[0] <= cutoff:
             failures.popleft()
         if not failures:
-            del self._failures[client]
+            self._failures.pop(client, None)
