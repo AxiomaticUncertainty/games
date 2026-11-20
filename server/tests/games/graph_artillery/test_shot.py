@@ -3,8 +3,8 @@ import math
 import pytest
 
 from games_server.games.graph_artillery.expression import parse
+from games_server.games.graph_artillery.expression.continuity import BREAK_PRECISION
 from games_server.games.graph_artillery.shot import (
-    BREAK_PRECISION,
     SAMPLE_STEP,
     Direction,
     Ending,
@@ -208,10 +208,16 @@ class TestSteepCurves:
         assert last(path).y < -30
 
 
-class TestWorkIsBounded:
-    def test_function_too_rough_to_prove_is_rejected(self) -> None:
-        # Mathematically just 0, but each 1000x*x could be anywhere in its
-        # range independently, so the proof is very rough: the divisor seems
-        # to include 0 until stretches are tiny.
+class TestTooRough:
+    def test_function_too_rough_to_trace_is_rejected(self) -> None:
         with pytest.raises(InvalidShot, match="too complicated"):
             trace("1/(1000x*x - 1000x*x + 1) - 1")
+
+
+class TestOverflow:
+    def test_curve_too_large_to_represent_ends_at_its_last_height(self) -> None:
+        # exp(1000) overflows at the first sample.
+        path = trace("exp(100000x) - 1")
+
+        assert path.ending is Ending.LIMIT
+        assert path.points == (Point(0.0, 0.0),)

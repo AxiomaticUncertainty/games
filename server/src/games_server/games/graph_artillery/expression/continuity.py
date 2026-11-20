@@ -1,4 +1,4 @@
-"""Proves that an expression is continuous over a whole stretch of x.
+"""Finds where an expression stops being continuous.
 
 Sampling can't show continuity: `sin(x - pi)/(x - pi)` is undefined at exactly
 one number, and no sample will ever land on it. But every function in the
@@ -12,13 +12,20 @@ one x, it is evaluated over all of them at once, giving a range of values that
 contains every value it could take. `x - pi` over [3, 4] is [3 - pi, 4 - pi],
 which contains 0, so `1/(x - pi)` is not provably defined there.
 
+To find the first break in a stretch, `first_break` checks the whole stretch,
+and if it can't be proven, splits it in half and checks the halves, left first,
+down to BREAK_PRECISION. A wide stretch can fail only because its ranges are
+rough, so if both halves pass, there was no break after all.
+
 Two limits, both on the cautious side:
 
 - Ranges can come out wider than the truth when x appears more than once.
   `(x - 3)*(x - 3)` over [2, 4] is treated as [-1, 1], since each factor could
   be anywhere in [-1, 1] independently, though it is really [0, 1]. So
   `sqrt((x - 3)*(x - 3))` can't be proven defined around 3. `(x - 3)^2` can:
-  powers are handled exactly.
+  powers are handled exactly. In bad cases like `x*x - x*x`, proving a stretch
+  takes splitting it very finely, so `first_break` gives up after MAX_CHECKS
+  checks and raises `TooRough`.
 - Ranges are computed with ordinary floating-point rounding, not rounded
   outward, so they are as precise as evaluating the expression at a point, no
   more.
@@ -40,6 +47,17 @@ from games_server.games.graph_artillery.expression.nodes import (
     Variable,
 )
 
+# How closely `first_break` pins down a break.
+BREAK_PRECISION = 1e-9
+# Finding a break takes about 60 checks, and proving a typical function
+# continuous takes far fewer, so this leaves plenty of room, while keeping the
+# slowest search to a fraction of a second.
+MAX_CHECKS = 5_000
+
+
+class TooRough(Exception):
+    """The ranges are too rough to find the first break within MAX_CHECKS."""
+
 
 class Interval(NamedTuple):
     """Every number from `low` to `high`, inclusive. Either may be infinite."""
@@ -60,6 +78,32 @@ def value_range(tree: Node, low: float, high: float) -> Interval | None:
         # ValueError and ArithmeticError: math refused an endpoint, as with
         # sin(inf). The point evaluator treats those as undefined too.
         return None
+
+
+def first_break(tree: Node, low: float, high: float) -> float | None:
+    """Where `tree` stops being provably defined in [low, high], or None if it
+    never does.
+
+    The answer is the last point before the trouble starts, within
+    BREAK_PRECISION of it; `tree` is defined there, as long as it is at
+    `low`. Raises `TooRough` if finding it takes more than MAX_CHECKS checks.
+    """
+    checks_left = MAX_CHECKS
+
+    def start_of_trouble(low: float, high: float) -> float | None:
+        nonlocal checks_left
+        checks_left -= 1
+        if checks_left < 0:
+            raise TooRough
+        if value_range(tree, low, high) is not None:
+            return None
+        if high - low <= BREAK_PRECISION:
+            return low
+        middle = (low + high) / 2
+        start = start_of_trouble(low, middle)
+        return start if start is not None else start_of_trouble(middle, high)
+
+    return start_of_trouble(low, high)
 
 
 class _Unproven(Exception):

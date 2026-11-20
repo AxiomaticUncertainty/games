@@ -3,7 +3,12 @@ import math
 import pytest
 
 from games_server.games.graph_artillery.expression import parse, vocabulary
-from games_server.games.graph_artillery.expression.continuity import Interval, value_range
+from games_server.games.graph_artillery.expression.continuity import (
+    BREAK_PRECISION,
+    Interval,
+    TooRough,
+    value_range,
+)
 
 
 def range_of(source: str, low: float, high: float) -> Interval | None:
@@ -95,8 +100,44 @@ def test_every_function_has_an_interval_version(name: str) -> None:
     assert range_of(f"{name}(x)", 0.1, 0.2) is not None
 
 
-def test_expression_reports_continuity() -> None:
-    f = parse("1/(x - 2)")
+class TestFirstBreak:
+    def test_none_for_a_continuous_function(self) -> None:
+        assert parse("sin(1000000x) + exp(x)").first_break(0, 10) is None
 
-    assert f.is_continuous(0, 1)
-    assert not f.is_continuous(1, 3)
+    def test_finds_a_divisor_reaching_zero(self) -> None:
+        found = parse("1/(x - 3.003)").first_break(0, 10)
+
+        assert found is not None
+        assert 3.003 - BREAK_PRECISION <= found < 3.003
+
+    def test_finds_a_single_missing_point(self) -> None:
+        found = parse("sin(x - pi)/(x - pi)").first_break(0, 10)
+
+        assert found == pytest.approx(math.pi, abs=BREAK_PRECISION)
+
+    def test_finds_the_first_of_several(self) -> None:
+        found = parse("tan(x)").first_break(0, 10)
+
+        assert found == pytest.approx(math.pi / 2, abs=BREAK_PRECISION)
+
+    def test_function_is_defined_at_the_answer(self) -> None:
+        f = parse("sqrt(5 - x)")
+        found = f.first_break(0, 10)
+
+        assert found is not None
+        assert not math.isnan(f(found))
+
+    def test_rough_over_the_whole_but_fine_in_parts_is_no_break(self) -> None:
+        # Over [0, 6] the repeated (x - 3) makes the sqrt argument look
+        # possibly negative; over each half, it can't be.
+        source = "sqrt((x - 3)*(x - 3) + 0.5)"
+        assert range_of(source, 0, 6) is None
+
+        assert parse(source).first_break(0, 6) is None
+
+    def test_gives_up_when_the_ranges_stay_too_rough(self) -> None:
+        # Mathematically just 1, but each 1000x*x could be anywhere in its
+        # range independently, so the divisor seems to include 0 until
+        # stretches are tiny.
+        with pytest.raises(TooRough):
+            parse("1/(1000x*x - 1000x*x + 1)").first_break(0, 20)

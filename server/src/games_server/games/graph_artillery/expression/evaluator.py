@@ -25,12 +25,12 @@ class Expression:
     def __call__(self, x: float) -> float:
         return evaluate(self.tree, x)
 
-    def is_continuous(self, low: float, high: float) -> bool:
-        """Whether this is provably defined, and so continuous, on [low, high].
+    def first_break(self, low: float, high: float) -> float | None:
+        """Where this stops being continuous in [low, high], or None if it doesn't.
 
-        See `continuity` for how, and for when it can't be proven.
+        See `continuity.first_break`, which this is.
         """
-        return continuity.value_range(self.tree, low, high) is not None
+        return continuity.first_break(self.tree, low, high)
 
 
 def evaluate(node: Node, x: float) -> float:
