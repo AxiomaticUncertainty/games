@@ -1,7 +1,8 @@
 # Architecture
 
-A short map of how the site fits together and why. Update it when a decision
-here changes.
+A short map of how the site fits together and why. It covers what every game
+shares. Each game has its own design notes under [games/](games/). Update this
+file when a decision here changes.
 
 ## Shape of the system
 
@@ -13,13 +14,13 @@ browser (React + TypeScript)  ──HTTP / WebSocket──▶  server (Python, F
 - **One deployable.** The server serves the built client as static files, so
   production is a single process on a single origin. No CORS, and the password
   cookie covers everything.
-- **The server is authoritative.** Players send what they typed (for example a
-  function like `sin(x) * 2`). The server parses it, simulates the shot, and
-  sends the result to everyone in the room. The client never decides outcomes,
-  so cheating would take more than editing browser code, and the rules exist in
-  exactly one place.
-- **Function input is parsed, never executed.** Expressions go through a small
-  parser that accepts a fixed grammar, never `eval`.
+- **The server is authoritative.** Players send their moves; the server checks
+  them against the game's rules, works out the result, and sends it to everyone
+  in the room. The client never decides outcomes, so cheating would take more
+  than editing browser code, and each game's rules exist in exactly one place.
+- **Games are self-contained.** Each game lives in its own module on the server
+  and the client, with its own doc in `docs/games/`. The site provides the
+  shared pieces: the password gate, rooms, and player connections.
 - **One shared password gates the whole site**, enforced in the server before
   any page, asset, or WebSocket is served. The password and the cookie-signing
   key come from environment variables and are never committed.
@@ -29,18 +30,21 @@ browser (React + TypeScript)  ──HTTP / WebSocket──▶  server (Python, F
 ```
 server/   Python backend (see server/README.md)
 client/   React frontend (added in a later PR)
-docs/     design notes like this one
+docs/     design notes: this file for the site, games/ for each game
 ```
 
 ## Roadmap
 
-Each step is one reviewable pull request.
+Each step is one reviewable pull request. Game-specific work is tracked in each
+game's own doc.
 
 1. Server scaffold, tooling, and CI.
 2. Password gate: login page, signed session cookie, login rate limiting.
 3. Client scaffold: Vite + React + TypeScript, served by the server.
-4. Expression parser and evaluator for player-entered functions.
-5. Game simulation: battlefield, obstacles, shot tracing, hit detection.
-6. Rooms and the WebSocket protocol: create/join, turn order, broadcasts.
-7. Game UI: battlefield rendering, function input, turn flow.
-8. Packaging: Dockerfile and deployment notes.
+4. Rooms and realtime connections: create and join a room, track who is in it,
+   and pass messages between players and the room's game.
+5. Packaging: Dockerfile and deployment notes.
+
+## Games
+
+- [Graph artillery](games/graph-artillery.md): the first game.

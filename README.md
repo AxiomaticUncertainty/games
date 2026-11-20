@@ -3,7 +3,8 @@
 A small, password-protected web app for playing multiplayer games with friends.
 
 The first game is an artillery duel where shots follow the graph of a function
-you type, e.g. `y = sin(x) * 2`.
+you type, e.g. `y = sin(x) * 2`. See
+[docs/games/graph-artillery.md](docs/games/graph-artillery.md).
 
 ## Where to start
 
