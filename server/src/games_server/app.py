@@ -37,5 +37,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="games", docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(PasswordGate, tokens=tokens, public_paths=PUBLIC_PATHS)
     app.include_router(health.router)
-    app.include_router(auth_routes.create_router(settings.site_password, tokens, throttle))
+    app.include_router(auth_routes.create_router(settings.site_password_hash, tokens, throttle))
     return app

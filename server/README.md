@@ -18,6 +18,7 @@ uv sync
 | ----------------------------- | ------------------------------------------------------------- |
 | Run with auto-reload          | `uv run uvicorn games_server.app:create_app --factory --reload --env-file .env` |
 | Run as in production          | `uv run games-server`                                         |
+| Hash a new site password      | `uv run hash-password`                                        |
 | Tests                         | `uv run pytest`                                               |
 | Lint                          | `uv run ruff check`                                           |
 | Format                        | `uv run ruff format`                                          |
@@ -32,13 +33,18 @@ The server refuses to start if a required one is missing or invalid.
 
 | Variable         | Default     | Meaning                                                     |
 | ---------------- | ----------- | ----------------------------------------------------------- |
-| `SITE_PASSWORD`  | (required)  | The shared password for the whole site                      |
+| `SITE_PASSWORD_HASH` | (required) | Argon2 hash of the shared site password (never the password itself) |
 | `SESSION_SECRET` | (required)  | Key for signing session cookies; at least 32 characters     |
 | `HOST`           | `127.0.0.1` | Interface to bind to                                        |
 | `PORT`           | `8000`      | Port to listen on                                           |
 
-For local development, copy `.env.example` to `.env` (which git ignores) and
-use the auto-reload command above.
+For local development, copy `.env.example` to `.env` (which git ignores), fill
+it in, and use the auto-reload command above.
+
+The server only ever sees a hash of the password, so a leaked environment
+doesn't reveal it. To set or change the password, run `uv run hash-password`
+and use its output as `SITE_PASSWORD_HASH`. The hash contains `$` characters,
+so wrap it in single quotes in `.env` files and shell commands.
 
 Changing `SESSION_SECRET` logs everyone out. Session cookies are `Secure`,
 so outside localhost the site must be served over HTTPS.

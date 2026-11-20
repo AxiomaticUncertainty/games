@@ -5,6 +5,7 @@ description = "Backend for the games site: HTTP, access control, and realtime ga
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "argon2-cffi>=25.1.0",
     "fastapi>=0.165.0",
     "itsdangerous>=2.2.0",
     "python-multipart>=0.0.34",
@@ -13,6 +14,7 @@ dependencies = [
 
 [project.scripts]
 games-server = "games_server.__main__:main"
+hash-password = "games_server.hash_password:main"
 
 [build-system]
 requires = ["uv_build>=0.13.9,<0.14.0"]

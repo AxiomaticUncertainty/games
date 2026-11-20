@@ -1,6 +1,5 @@
 """Login and logout endpoints."""
 
-import hmac
 from datetime import timedelta
 from html import escape
 from importlib.resources import files
@@ -11,6 +10,7 @@ from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from games_server.auth.gate import LOGIN_PATH
+from games_server.auth.passwords import verify_password
 from games_server.auth.throttle import LoginThrottle
 from games_server.auth.tokens import SESSION_COOKIE, SESSION_LIFETIME, SessionTokens
 
@@ -22,7 +22,7 @@ _LOGIN_PAGE = Template(
 )
 
 
-def create_router(site_password: str, tokens: SessionTokens, throttle: LoginThrottle) -> APIRouter:
+def create_router(password_hash: str, tokens: SessionTokens, throttle: LoginThrottle) -> APIRouter:
     router = APIRouter()
 
     @router.get(LOGIN_PATH)
@@ -33,15 +33,15 @@ def create_router(site_password: str, tokens: SessionTokens, throttle: LoginThro
     def login(request: Request, password: Annotated[str, Form()]) -> Response:
         client = request.client.host if request.client else "unknown"
 
+        # Check the throttle before the password: hashing deliberately costs
+        # real CPU time, and a locked-out client shouldn't get to spend it.
         if throttle.is_blocked(client):
             return _render_login_page(
                 "Too many attempts. Try again in a few minutes.",
                 status.HTTP_429_TOO_MANY_REQUESTS,
             )
 
-        # compare_digest takes the same time however much of the guess is
-        # right, so response timing reveals nothing about the password.
-        if not hmac.compare_digest(password.encode(), site_password.encode()):
+        if not verify_password(password_hash, password):
             throttle.record_failure(client)
             return _render_login_page("Wrong password.", status.HTTP_401_UNAUTHORIZED)
 

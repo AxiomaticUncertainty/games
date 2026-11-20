@@ -8,6 +8,8 @@ a test builds a `Settings` by hand instead of patching the environment.
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from games_server.auth.passwords import is_password_hash
+
 MIN_SESSION_SECRET_LENGTH = 32
 
 
@@ -18,14 +20,16 @@ class ConfigError(ValueError):
 @dataclass(frozen=True)
 class Settings:
     # repr=False keeps secrets out of logs and tracebacks that print settings.
-    site_password: str = field(repr=False)
+    site_password_hash: str = field(repr=False)
     session_secret: str = field(repr=False)
     host: str = "127.0.0.1"
     port: int = 8000
 
     def __post_init__(self) -> None:
-        if not self.site_password:
-            raise ConfigError("SITE_PASSWORD must not be empty.")
+        if not is_password_hash(self.site_password_hash):
+            raise ConfigError(
+                "SITE_PASSWORD_HASH must be an Argon2 hash. Generate one with: uv run hash-password"
+            )
         if len(self.session_secret) < MIN_SESSION_SECRET_LENGTH:
             raise ConfigError(
                 f"SESSION_SECRET must be at least {MIN_SESSION_SECRET_LENGTH} characters. "
@@ -40,7 +44,7 @@ class Settings:
         Optional variables fall back to the defaults above.
         """
         return cls(
-            site_password=_require(env, "SITE_PASSWORD"),
+            site_password_hash=_require(env, "SITE_PASSWORD_HASH"),
             session_secret=_require(env, "SESSION_SECRET"),
             host=env.get("HOST", cls.host),
             port=_parse_port(env.get("PORT", str(cls.port))),

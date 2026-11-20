@@ -5,15 +5,17 @@ from fastapi import FastAPI, WebSocket
 from fastapi.testclient import TestClient
 
 from games_server.app import create_app
+from games_server.auth.passwords import hash_password
 from games_server.config import Settings
 
 PASSWORD = "correct horse battery staple"
+PASSWORD_HASH = hash_password(PASSWORD)
 SECRET = "x" * 32
 
 
 @pytest.fixture
 def settings() -> Settings:
-    return Settings(site_password=PASSWORD, session_secret=SECRET)
+    return Settings(site_password_hash=PASSWORD_HASH, session_secret=SECRET)
 
 
 @pytest.fixture

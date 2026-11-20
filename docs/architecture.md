@@ -22,8 +22,9 @@ browser (React + TypeScript)  ──HTTP / WebSocket──▶  server (Python, F
   and the client, with its own doc in `docs/games/`. The site provides the
   shared pieces: the password gate, rooms, and player connections.
 - **One shared password gates the whole site**, enforced in the server before
-  any page, asset, or WebSocket is served. The password and the cookie-signing
-  key come from environment variables and are never committed.
+  any page, asset, or WebSocket is served. The server is given a hash of the
+  password, never the password itself. The hash and the cookie-signing key come
+  from environment variables and are never committed.
 
 ## Repository layout
 
