@@ -9,6 +9,7 @@ Changing either SESSION_SECRET or the password changes the key, so every
 existing token stops verifying and everyone has to log in again.
 """
 
+import hashlib
 from datetime import timedelta
 
 from itsdangerous import BadSignature, TimestampSigner
@@ -23,9 +24,15 @@ class SessionTokens:
     def __init__(
         self, *, secret: str, password_hash: str, lifetime: timedelta = SESSION_LIFETIME
     ) -> None:
-        # The salt separates these signatures from anything else that might be
-        # signed with the same secret in future.
-        self._signer = TimestampSigner(_signing_key(secret, password_hash), salt="games.session")
+        self._signer = TimestampSigner(
+            _signing_key(secret, password_hash),
+            # Separates these signatures from anything else that might be
+            # signed with the same key in future.
+            salt="games.session",
+            # itsdangerous defaults to SHA-1. HMAC-SHA1 isn't broken, but
+            # SHA-256 is the modern default and spares readers the question.
+            digest_method=hashlib.sha256,
+        )
         self._lifetime = lifetime
 
     def issue(self) -> str:

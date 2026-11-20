@@ -55,3 +55,11 @@ def test_token_expires_after_its_lifetime(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.undo()
 
     assert not tokens.is_valid(old_token)
+
+
+def test_tokens_are_signed_with_sha256() -> None:
+    signature = make_tokens().issue().rsplit(".", 1)[1]
+
+    # A SHA-256 HMAC is 32 bytes: 43 characters of unpadded base64. SHA-1's
+    # would be 27.
+    assert len(signature) == 43
