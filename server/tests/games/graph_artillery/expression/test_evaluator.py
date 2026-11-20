@@ -39,13 +39,45 @@ def test_computes_the_value_at_x(source: str, x: float, expected: float) -> None
         ("asin(x)", 2),
         ("x^(1/3)", -8),  # would be a complex number
         ("0^x", -1),
-        ("exp(x)", 1000),  # overflow inside a function
-        ("x^x", 1000),  # overflow in an operator
-        ("x * 10^308 * 10", 1),  # overflow to infinity in plain arithmetic
+        ("exp(x)", 1000),  # a result too large to represent
+        ("x^x", 1000),
+        ("x * 10^308 * 10", 1),
+        ("exp(x) - exp(x)", 1000),  # infinity minus infinity has no answer
     ],
 )
 def test_undefined_points_give_nan(source: str, x: float) -> None:
     assert math.isnan(parse(source)(x))
+
+
+@pytest.mark.parametrize(
+    ("source", "x", "expected"),
+    [
+        ("1 / (1 + exp(-1000x))", -1, 0),  # a steep step
+        ("1 / sinh(x)", -1000, 0),
+        ("1 / cosh(x)", -1000, 0),
+        ("1 / x^x", 1000, 0),
+        ("atan(x^x)", 1000, math.pi / 2),
+        ("tanh(10^308 * x)", -10, -1),
+    ],
+)
+def test_too_large_along_the_way_is_fine_if_the_result_is_not(
+    source: str, x: float, expected: float
+) -> None:
+    assert parse(source)(x) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    ("source", "x", "sign"),
+    [
+        ("sinh(x)", -1000, -1),
+        ("(-10)^x", 1001, -1),
+        ("(-10)^x", 1000, 1),
+        ("(-0.1)^x", -1001, -1),
+    ],
+)
+def test_overflow_keeps_its_sign(source: str, x: float, sign: int) -> None:
+    # Checked through tanh, which brings infinity back to a finite +-1.
+    assert parse(f"tanh({source})")(x) == sign
 
 
 def test_one_parse_can_be_evaluated_at_many_points() -> None:
