@@ -4,7 +4,10 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from games_server.app import create_app
+from games_server.auth.passwords import hash_password
 from games_server.auth.tokens import SESSION_COOKIE
+from games_server.config import Settings
 from tests.conftest import log_in
 
 
@@ -84,3 +87,16 @@ def test_repeated_failures_lock_out_even_the_right_password(client: TestClient) 
         assert log_in(client, "guess") == 401
 
     assert log_in(client) == 429
+
+
+def test_changing_the_password_logs_everyone_out(client: TestClient, settings: Settings) -> None:
+    log_in(client)
+    cookie = client.cookies[SESSION_COOKIE]
+
+    # Same secret, new password: as if the server restarted with a new hash.
+    restarted = create_app(Settings(hash_password("a new password"), settings.session_secret))
+    with TestClient(restarted, base_url="https://testserver") as after_restart:
+        after_restart.cookies.set(SESSION_COOKIE, cookie)
+
+        assert after_restart.get("/healthz").status_code == 200
+        assert after_restart.get("/", follow_redirects=False).status_code == 303

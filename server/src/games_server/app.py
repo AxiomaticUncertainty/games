@@ -26,7 +26,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings is None:
         settings = Settings.from_env(os.environ)
 
-    tokens = SessionTokens(settings.session_secret)
+    tokens = SessionTokens(
+        secret=settings.session_secret, password_hash=settings.site_password_hash
+    )
     throttle = LoginThrottle(
         max_failures=auth_routes.MAX_FAILED_LOGINS,
         window=auth_routes.FAILED_LOGIN_WINDOW,

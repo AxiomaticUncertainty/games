@@ -46,7 +46,9 @@ doesn't reveal it. To set or change the password, run `uv run hash-password`
 and use its output as `SITE_PASSWORD_HASH`. The hash contains `$` characters,
 so wrap it in single quotes in `.env` files and shell commands.
 
-Changing `SESSION_SECRET` logs everyone out. Session cookies are `Secure`,
+Changing the password (that is, `SITE_PASSWORD_HASH`) or `SESSION_SECRET`
+logs everyone out. Running `hash-password` again with the same password also
+counts, since each hash is freshly salted. Session cookies are `Secure`,
 so outside localhost the site must be served over HTTPS.
 
 ## Access control
