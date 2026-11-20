@@ -6,6 +6,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
+# Node
+node_modules/
+client/dist/
+
 # Local configuration and secrets
 .env
 .env.*

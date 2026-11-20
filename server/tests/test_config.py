@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from games_server.auth.passwords import hash_password
@@ -52,3 +54,18 @@ def test_secrets_are_hidden_from_repr() -> None:
 
     assert HASH not in text
     assert "s" * 32 not in text
+
+
+def test_client_dir_is_optional() -> None:
+    assert Settings.from_env(REQUIRED).client_dir is None
+
+
+def test_reads_client_dir(tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text("")
+
+    assert Settings.from_env({**REQUIRED, "CLIENT_DIR": str(tmp_path)}).client_dir == tmp_path
+
+
+def test_client_dir_must_contain_a_built_client(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="npm run build"):
+        Settings.from_env({**REQUIRED, "CLIENT_DIR": str(tmp_path)})

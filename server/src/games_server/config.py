@@ -7,6 +7,7 @@ a test builds a `Settings` by hand instead of patching the environment.
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from games_server.auth.passwords import is_password_hash
 
@@ -24,6 +25,9 @@ class Settings:
     session_secret: str = field(repr=False)
     host: str = "127.0.0.1"
     port: int = 8000
+    # The built client (client/dist). Unset in development, where Vite's dev
+    # server serves the client instead.
+    client_dir: Path | None = None
 
     def __post_init__(self) -> None:
         if not is_password_hash(self.site_password_hash):
@@ -34,6 +38,11 @@ class Settings:
             raise ConfigError(
                 f"SESSION_SECRET must be at least {MIN_SESSION_SECRET_LENGTH} characters. "
                 'Generate one with: python -c "import secrets; print(secrets.token_urlsafe(32))"'
+            )
+        if self.client_dir is not None and not (self.client_dir / "index.html").is_file():
+            raise ConfigError(
+                f"CLIENT_DIR {str(self.client_dir)!r} has no index.html. "
+                "Build the client first: cd client && npm run build"
             )
 
     @classmethod
@@ -48,6 +57,7 @@ class Settings:
             session_secret=_require(env, "SESSION_SECRET"),
             host=env.get("HOST", cls.host),
             port=_parse_port(env.get("PORT", str(cls.port))),
+            client_dir=Path(env["CLIENT_DIR"]) if "CLIENT_DIR" in env else None,
         )
 
 
