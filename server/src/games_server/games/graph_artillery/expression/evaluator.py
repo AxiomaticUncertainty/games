@@ -3,7 +3,7 @@
 import math
 from dataclasses import dataclass
 
-from games_server.games.graph_artillery.expression import vocabulary
+from games_server.games.graph_artillery.expression import continuity, vocabulary
 from games_server.games.graph_artillery.expression.nodes import (
     BinaryOp,
     Call,
@@ -24,6 +24,13 @@ class Expression:
 
     def __call__(self, x: float) -> float:
         return evaluate(self.tree, x)
+
+    def is_continuous(self, low: float, high: float) -> bool:
+        """Whether this is provably defined, and so continuous, on [low, high].
+
+        See `continuity` for how, and for when it can't be proven.
+        """
+        return continuity.value_range(self.tree, low, high) is not None
 
 
 def evaluate(node: Node, x: float) -> float:
@@ -72,16 +79,4 @@ def _apply(operator: Operator, left: float, right: float) -> float:
         case Operator.DIVIDE:
             return left / right
         case Operator.POWER:
-            return _power(left, right)
-
-
-def _power(base: float, exponent: float) -> float:
-    # math.pow, not **: (-8) ** (1/3) quietly returns a complex number, while
-    # math.pow raises ValueError, which evaluate() turns into NaN.
-    try:
-        return math.pow(base, exponent)
-    except OverflowError:
-        # Negative only for a negative base and an odd exponent; math.pow has
-        # already rejected a negative base with a non-integer exponent.
-        is_negative = base < 0 and exponent % 2 == 1
-        return -math.inf if is_negative else math.inf
+            return vocabulary.power(left, right)

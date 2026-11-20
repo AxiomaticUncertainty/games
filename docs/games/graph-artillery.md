@@ -25,12 +25,16 @@ password gate, rooms, and the server deciding every outcome) is in
   fired left follows `y = f(t)` at horizontal distance `t` to the left, so a
   function means the same thing whichever way the player faces: `x^2` arcs
   upward on either side. The other half of the graph is never used.
-- **A shot stops at the first break in its curve**: where the function is
-  undefined (`sqrt(5 - x)` beyond 5), where it jumps (`abs(x - 3)/(x - 3)` at
-  3), or where it turns steeper than 100:1, which is vertical at battlefield
-  scale. The last rule covers poles: `1/(x - 5)` stops where it turns vertical,
-  shortly before 5. It also bounds how much work any shot can cost the
-  server. `shot.py` explains how breaks are found.
+- **A shot stops where its function stops being continuous**: where it is
+  undefined (`sqrt(5 - x)` beyond 5), jumps (`abs(x - 3)/(x - 3)` at 3), has
+  a pole (`tan(x)` at pi/2), or is missing a single point
+  (`sin(x - pi)/(x - pi)` at pi). Steepness alone never stops a shot, so a
+  steep sigmoid makes a near-vertical wall. Sampling can't find a single
+  missing point, so continuity is proven instead, with interval arithmetic
+  over each stretch of the path; `expression/continuity.py` explains how, and
+  the rare functions the proof is too rough for.
+- **The battlefield is a rectangle.** A shot also ends when it reaches the
+  far side or just after it crosses the top or bottom edge.
 
 ## Function syntax
 

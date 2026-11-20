@@ -5,31 +5,36 @@ import pytest
 from games_server.games.graph_artillery.expression import parse
 from games_server.games.graph_artillery.shot import (
     BREAK_PRECISION,
-    MAX_SLOPE,
     SAMPLE_STEP,
     Direction,
     Ending,
-    Function,
     InvalidShot,
     Point,
     ShotPath,
     trace_shot,
 )
 
-# Large enough that these tests are never cut short by the limits, unless a
-# test sets its own.
+# A battlefield of roughly the size the game will use, unless a test sets its
+# own edges.
 FAR = 20.0
-HIGH = 1e9
+LOW = -100.0
+HIGH = 100.0
 
 
 def trace(
-    shot: str | Function,
+    source: str,
     direction: Direction = Direction.RIGHT,
     max_distance: float = FAR,
+    min_height: float = LOW,
     max_height: float = HIGH,
 ) -> ShotPath:
-    f = parse(shot) if isinstance(shot, str) else shot
-    return trace_shot(f, direction, max_distance=max_distance, max_height=max_height)
+    return trace_shot(
+        parse(source),
+        direction,
+        max_distance=max_distance,
+        min_height=min_height,
+        max_height=max_height,
+    )
 
 
 def last(path: ShotPath) -> Point:
@@ -87,19 +92,29 @@ class TestLimits:
         assert last(path).x == 10
         assert len(path.points) == round(10 / SAMPLE_STEP) + 1
 
-    def test_stops_just_after_leaving_the_height_limit(self) -> None:
+    def test_stops_just_after_crossing_the_top_edge(self) -> None:
         path = trace("x^2", max_height=4)
 
         assert path.ending is Ending.LIMIT
-        assert abs(last(path).y) > 4
-        assert abs(path.points[-2].y) <= 4
+        assert last(path).y > 4
+        assert path.points[-2].y <= 4
 
-    def test_steep_but_continuous_curve_is_not_a_break(self) -> None:
-        # Changes by up to 0.5 between samples, ten times the jump threshold,
-        # but never steeper than 50:1.
-        path = trace("50sin(x)", max_distance=10)
+    def test_stops_just_after_crossing_the_bottom_edge(self) -> None:
+        path = trace("-x^2", min_height=-1, max_height=4)
 
         assert path.ending is Ending.LIMIT
+        assert last(path).y < -1
+        assert path.points[-2].y >= -1
+
+    def test_shooter_must_be_on_the_battlefield(self) -> None:
+        with pytest.raises(ValueError, match="on the battlefield"):
+            trace("x", min_height=1)
+
+    def test_edges_need_not_be_symmetric(self) -> None:
+        # Close to the floor, far from the ceiling: a rising shot isn't cut
+        # short just because the bottom edge is near.
+        path = trace("x", max_distance=10, min_height=-1, max_height=20)
+
         assert last(path).x == 10
 
 
@@ -121,25 +136,11 @@ class TestBreaks:
         assert 3.003 - BREAK_PRECISION <= last(path).x < 3.003
         assert last(path).y == pytest.approx(0)
 
-    def test_stops_where_a_pole_turns_vertical(self) -> None:
-        # 1/(x - c) is steeper than MAX_SLOPE within 1/sqrt(MAX_SLOPE) of c.
-        pole = 5.005
-        path = trace(f"1/(x - {pole}) + 1/{pole}")
+    def test_a_jump_off_the_battlefield_is_still_a_break(self) -> None:
+        path = trace("1000 * (abs(x - 3.003)/(x - 3.003) + 1)")
 
         assert path.ending is Ending.BREAK
-        assert pole - 1.5 / math.sqrt(MAX_SLOPE) < last(path).x < pole
-
-    def test_stops_before_a_pole_that_lands_exactly_on_a_sample(self) -> None:
-        path = trace("1/(x - 5) + 1/5")
-
-        assert path.ending is Ending.BREAK
-        assert 4.8 < last(path).x < 5
-
-    def test_curve_steeper_than_the_limit_is_a_break(self) -> None:
-        path = trace(f"{MAX_SLOPE * 2}x")
-
-        assert path.ending is Ending.BREAK
-        assert last(path) == Point(0.0, 0.0)
+        assert last(path).x == pytest.approx(3.003, abs=1e-6)
 
     def test_finds_the_first_of_two_jumps(self) -> None:
         path = trace("abs(x - 2.003)/(x - 2.003) + abs(x - 4.003)/(x - 4.003) + 2")
@@ -147,29 +148,70 @@ class TestBreaks:
         assert last(path).x == pytest.approx(2.003, abs=1e-6)
 
     def test_finds_a_jump_hidden_behind_a_steep_stretch(self) -> None:
-        # Within one sample interval, a 50:1 climb and then a jump of 2. The
-        # interval as a whole is steep, so the search must look past the
-        # first half, which is steep but continuous.
+        # Within one sample interval, a 50:1 climb and then a jump of 2.
         path = trace("50x + abs(x - 0.0073)/(x - 0.0073) + 1")
 
         assert path.ending is Ending.BREAK
         assert last(path).x == pytest.approx(0.0073, abs=1e-6)
 
+    def test_stops_at_a_single_missing_point(self) -> None:
+        # Continuous on both sides of pi, but undefined at pi itself, which
+        # no sample lands on.
+        path = trace("sin(x - pi)/(x - pi) - sin(-pi)/(-pi)")
 
-class TestWorkIsBounded:
-    def test_a_wildly_oscillating_function_costs_a_bounded_number_of_evaluations(self) -> None:
-        # Changes visibly within every sample but stays just under MAX_SLOPE,
-        # the worst case for splitting intervals.
-        f = parse(f"0.2 * sin({MAX_SLOPE * 0.99 / 0.2}x)")
-        calls = 0
+        assert path.ending is Ending.BREAK
+        assert last(path).x == pytest.approx(math.pi, abs=1e-6)
 
-        def counting(x: float) -> float:
-            nonlocal calls
-            calls += 1
-            return f(x)
+    def test_stops_at_a_pole_inside_the_battlefield(self) -> None:
+        # tan never quite reaches infinity at the float closest to pi/2, so
+        # sampling alone would see a very tall but finite spike.
+        path = trace("tan(x)", min_height=-1e20, max_height=1e20)
 
-        path = trace(counting, max_distance=FAR)
+        assert path.ending is Ending.BREAK
+        assert last(path).x == pytest.approx(math.pi / 2, abs=1e-6)
+
+
+class TestSteepCurves:
+    def test_steep_sigmoid_is_not_a_break(self) -> None:
+        # Climbs from 0 to 2 within about a hundredth of a unit around 3.
+        path = trace("2/(1 + exp(-1000(x - 3)))", max_distance=10)
 
         assert path.ending is Ending.LIMIT
-        samples = round(FAR / SAMPLE_STEP)
-        assert calls < 50 * samples
+        assert last(path).x == 10
+        assert last(path).y == pytest.approx(2)
+
+    def test_steeper_than_any_sample_can_follow_is_not_a_break(self) -> None:
+        # The climb takes about a millionth of a unit: in one sample interval.
+        path = trace("tanh(1000000(x - 3.003)) + tanh(3003000)", max_distance=10)
+
+        assert path.ending is Ending.LIMIT
+        assert last(path).y == pytest.approx(2)
+
+    def test_fast_wiggles_are_not_a_break(self) -> None:
+        path = trace("sin(1000000x)", max_distance=10)
+
+        assert path.ending is Ending.LIMIT
+        assert last(path).x == 10
+
+    def test_pole_ends_where_the_curve_leaves_the_battlefield(self) -> None:
+        # Falls toward -infinity just before 5.005.
+        path = trace("1/(x - 5.005) + 1/5.005", min_height=-30)
+
+        assert path.ending is Ending.LIMIT
+        assert last(path).y < -30
+        assert path.points[-2].y >= -30
+
+    def test_pole_landing_exactly_on_a_sample(self) -> None:
+        path = trace("1/(x - 5) + 1/5", min_height=-30)
+
+        assert path.ending is Ending.LIMIT
+        assert last(path).y < -30
+
+
+class TestWorkIsBounded:
+    def test_function_too_rough_to_prove_is_rejected(self) -> None:
+        # Mathematically just 0, but each 1000x*x could be anywhere in its
+        # range independently, so the proof is very rough: the divisor seems
+        # to include 0 until stretches are tiny.
+        with pytest.raises(InvalidShot, match="too complicated"):
+            trace("1/(1000x*x - 1000x*x + 1) - 1")
