@@ -52,6 +52,12 @@ def closed_with(websocket: WebSocketTestSession) -> WebSocketDisconnect:
     return closed.value
 
 
+def is_connected(announcement: dict[str, Any], player_id: str) -> bool:
+    """Whether a room announcement shows `player_id` as connected."""
+    (player,) = (p for p in announcement["room"]["players"] if p["id"] == player_id)
+    return bool(player["connected"])
+
+
 def test_needs_the_password(client: TestClient) -> None:
     with (
         pytest.raises(WebSocketDisconnect),
@@ -82,8 +88,8 @@ def test_hears_when_someone_joins(player: TestClient) -> None:
         say_hello(websocket, seat["token"])
         join(player, room_id, "Bo")
 
-        names = [p["name"] for p in websocket.receive_json()["room"]["players"]]
-        assert names == ["Ada", "Bo"]
+        names = sorted(p["name"] for p in websocket.receive_json()["room"]["players"])
+        assert names == ["Ada", "Bo"]  # in any order
 
 
 def test_hears_when_someone_connects_and_disconnects(player: TestClient) -> None:
@@ -95,9 +101,9 @@ def test_hears_when_someone_connects_and_disconnects(player: TestClient) -> None
         say_hello(ada_socket, ada["token"])
         with connect(player, room_id) as bo_socket:
             say_hello(bo_socket, bo["token"])
-            assert ada_socket.receive_json()["room"]["players"][1]["connected"] is True
+            assert is_connected(ada_socket.receive_json(), bo["player_id"])
 
-        assert ada_socket.receive_json()["room"]["players"][1]["connected"] is False
+        assert not is_connected(ada_socket.receive_json(), bo["player_id"])
 
 
 def test_connecting_again_closes_the_first_connection(player: TestClient) -> None:
