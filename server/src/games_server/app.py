@@ -1,13 +1,14 @@
 """Application factory.
 
 `create_app` is the single place where the web app is assembled: routers,
-middleware, and (later) static files are all wired up here. Building the app in
+middleware, and the built client's files are all wired up here. Building the app in
 a function rather than at import time lets each test get a fresh, isolated app.
 """
 
 import os
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from games_server import health
 from games_server.auth import routes as auth_routes
@@ -40,4 +41,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(PasswordGate, tokens=tokens, public_paths=PUBLIC_PATHS)
     app.include_router(health.router)
     app.include_router(auth_routes.create_router(settings.site_password_hash, tokens, throttle))
+
+    if settings.client_dir is not None:
+        # Mounted last: "/" matches every path, so it only receives requests
+        # that no route above claimed. html=True serves index.html for "/".
+        app.mount("/", StaticFiles(directory=settings.client_dir, html=True), name="client")
+
     return app

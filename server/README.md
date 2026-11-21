@@ -37,6 +37,7 @@ The server refuses to start if a required one is missing or invalid.
 | `SESSION_SECRET` | (required)  | Key for signing session cookies; at least 32 characters     |
 | `HOST`           | `127.0.0.1` | Interface to bind to                                        |
 | `PORT`           | `8000`      | Port to listen on                                           |
+| `CLIENT_DIR`     | (unset)     | Built client to serve, e.g. `../client/dist`. Unset in development, where Vite serves the client |
 
 For local development, copy `.env.example` to `.env` (which git ignores), fill
 it in, and use the auto-reload command above.

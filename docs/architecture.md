@@ -30,7 +30,7 @@ browser (React + TypeScript)  ──HTTP / WebSocket──▶  server (Python, F
 
 ```
 server/   Python backend (see server/README.md)
-client/   React frontend (added in a later PR)
+client/   React frontend (see client/README.md)
 docs/     design notes: this file for the site, games/ for each game
 ```
 

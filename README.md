@@ -12,6 +12,7 @@ you type, e.g. `y = sin(x) * 2`. See
   together and lists the roadmap.
 - [server/README.md](server/README.md) covers running, testing, and
   configuring the backend.
+- [client/README.md](client/README.md) covers the browser side.
 
 Development happens through pull requests; see the PR history for the
 reasoning behind each change.
