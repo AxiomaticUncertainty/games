@@ -35,8 +35,14 @@ def test_serves_the_client_after_login(client: TestClient) -> None:
     assert client.get("/assets/app.js").text == "console.log('hi')"
 
 
+def test_room_links_are_answered_with_the_client(client: TestClient) -> None:
+    log_in(client)
+
+    assert client.get("/rooms/K7QXM").text == "<p>the client</p>"
+
+
 def test_client_files_are_behind_the_password(client: TestClient) -> None:
-    for path in ("/", "/index.html", "/assets/app.js"):
+    for path in ("/", "/index.html", "/assets/app.js", "/rooms/K7QXM"):
         response = client.get(path, follow_redirects=False)
         assert response.status_code == 303, path
         assert response.headers["location"] == "/login"
