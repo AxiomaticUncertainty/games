@@ -16,6 +16,8 @@ from games_server.auth.gate import LOGIN_PATH, PasswordGate
 from games_server.auth.throttle import LoginThrottle
 from games_server.auth.tokens import SessionTokens
 from games_server.config import Settings
+from games_server.rooms import routes as room_routes
+from games_server.rooms.registry import RoomRegistry
 
 # Paths reachable without the password: the login form itself, and the health
 # check that hosting platforms call.
@@ -41,6 +43,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(PasswordGate, tokens=tokens, public_paths=PUBLIC_PATHS)
     app.include_router(health.router)
     app.include_router(auth_routes.create_router(settings.site_password_hash, tokens, throttle))
+    app.include_router(room_routes.create_router(RoomRegistry()))
 
     if settings.client_dir is not None:
         # Mounted last: "/" matches every path, so it only receives requests

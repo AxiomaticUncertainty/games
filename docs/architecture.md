@@ -26,6 +26,22 @@ browser (React + TypeScript)  ──HTTP / WebSocket──▶  server (Python, F
   password, never the password itself. The hash and the cookie-signing key come
   from environment variables and are never committed.
 
+## Rooms
+
+A room is where players gather to play one game together.
+
+- **Players find rooms in a lobby.** The home page lists the open rooms for
+  each game, and each room also has a link to send to friends. The site is
+  already private, so listing rooms openly gives nothing away.
+- **A seat is how the server knows a player.** There are no accounts, only
+  the shared password. Taking a seat gives you a display name, unique within
+  the room, and a secret token, which the browser keeps. Showing the token
+  takes your seat back after a refresh or a dropped connection, instead of
+  joining as someone new.
+- **Rooms live in memory.** A restart closes them all, which is fine at this
+  size. A room closes when its last player leaves, or after two hours with
+  nothing happening in it.
+
 ## Repository layout
 
 ```
@@ -42,8 +58,11 @@ game's own doc.
 1. Server scaffold, tooling, and CI.
 2. Password gate: login page, signed session cookie, login rate limiting.
 3. Client scaffold: Vite + React + TypeScript, served by the server.
-4. Rooms and realtime connections: create and join a room, track who is in it,
-   and pass messages between players and the room's game.
+4. Rooms and realtime connections, in three pull requests:
+   1. Rooms on the server: list, create, join, and leave them over HTTP.
+   2. Realtime connections: a WebSocket per player, showing who is connected,
+      and passing messages between players and the room's game.
+   3. The lobby and room pages in the client.
 5. Packaging: Dockerfile and deployment notes.
 
 ## Games
