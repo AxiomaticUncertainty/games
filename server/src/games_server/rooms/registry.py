@@ -20,10 +20,11 @@ them (see `connection`).
 import hashlib
 import secrets
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
 from hmac import compare_digest
+from types import MappingProxyType
 from typing import NamedTuple
 
 from games_server.games import GAMES, Game, PlayerId
@@ -90,9 +91,26 @@ class Room:
     # changes it.
     seats: dict[PlayerId, Seat] = field(default_factory=dict)
     seats_ever: int = 0  # so player ids are never reused within a room
-    # Each seated player's live connection, if they have one. Only the
-    # registry changes it.
-    connections: dict[PlayerId, Connection] = field(default_factory=dict)
+    # Each seated player's live connection, if they have one. Changed only by
+    # `attach` and `let_go`, which close every connection the room stops
+    # holding. A connection dropped without being closed would leave its
+    # WebSocket open, with nothing ever sent on it again.
+    _connections: dict[PlayerId, Connection] = field(default_factory=dict, init=False)
+
+    @property
+    def connections(self) -> Mapping[PlayerId, Connection]:
+        return MappingProxyType(self._connections)
+
+    def attach(self, player_id: PlayerId, connection: Connection) -> None:
+        """Make `connection` the player's, closing any they had before: a seat
+        has one connection at a time."""
+        self.let_go(player_id, CloseCode.REPLACED, "You opened this room somewhere else.")
+        self._connections[player_id] = connection
+
+    def let_go(self, player_id: PlayerId, code: CloseCode, reason: str) -> None:
+        """Close the player's connection, if they have one, and forget it."""
+        if connection := self._connections.pop(player_id, None):
+            connection.close(code, reason)
 
     def seat_for(self, token: str) -> Seat:
         """The seat `token` belongs to."""
@@ -153,13 +171,12 @@ class RoomRegistry:
         room = self.get(room_id)
         seat = room.seat_for(token)
         del room.seats[seat.player_id]
-        if connection := room.connections.pop(seat.player_id, None):
-            connection.close(CloseCode.GONE, "You left the room.")
+        room.let_go(seat.player_id, CloseCode.GONE, "You left the room.")
         room.last_active = self._clock()
         if room.seats:
             self._announce(room)
         else:
-            del self._rooms[room.id]
+            self._remove(room)
 
     def connect(self, room_id: str, token: str) -> tuple[Room, Seat, Connection]:
         """A new live connection for the seat `token` belongs to.
@@ -169,11 +186,9 @@ class RoomRegistry:
         """
         room = self.get(room_id)
         seat = room.seat_for(token)
-        if previous := room.connections.get(seat.player_id):
-            previous.close(CloseCode.REPLACED, "You opened this room somewhere else.")
         connection = Connection()
         connection.send({"type": "welcome", "player_id": seat.player_id})
-        room.connections[seat.player_id] = connection
+        room.attach(seat.player_id, connection)
         room.last_active = self._clock()
         self._announce(room)
         return room, seat, connection
@@ -189,7 +204,9 @@ class RoomRegistry:
             return
         if room.connections.get(player_id) is not connection:
             return
-        del room.connections[player_id]
+        # It has ended already, so closing it changes nothing. Letting go
+        # always closes, though, so nothing can be dropped while still open.
+        room.let_go(player_id, CloseCode.GONE, "")
         room.last_active = self._clock()
         self._announce(room)
 
@@ -219,7 +236,13 @@ class RoomRegistry:
         cutoff = self._clock() - ROOM_IDLE_TIMEOUT.total_seconds()
         for room in list(self._rooms.values()):
             if not room.connections and room.last_active < cutoff:
-                del self._rooms[room.id]
+                self._remove(room)
+
+    def _remove(self, room: Room) -> None:
+        """Close `room`, along with any connections still in it."""
+        for player_id in list(room.connections):
+            room.let_go(player_id, CloseCode.GONE, "The room closed.")
+        del self._rooms[room.id]
 
     def _new_room_id(self) -> str:
         while True:

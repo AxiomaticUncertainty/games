@@ -316,6 +316,14 @@ class TestConnections:
         assert connection.closed
         assert room.connections == {}
 
+    def test_connections_change_only_through_the_room(self, registry: RoomRegistry) -> None:
+        # So that nothing can drop a connection without closing it.
+        room, ada, ada_token = registry.create(GAME, "Ada")
+        registry.connect(room.id, ada_token)
+
+        with pytest.raises(TypeError):
+            del room.connections[ada.player_id]  # type: ignore[attr-defined]
+
     def test_a_room_with_a_connection_never_idles(
         self, registry: RoomRegistry, clock: FakeClock
     ) -> None:
