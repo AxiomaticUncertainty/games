@@ -33,8 +33,16 @@ password gate, rooms, and the server deciding every outcome) is in
   missing point, so continuity is proven instead, with interval arithmetic
   over each stretch of the path; `expression/continuity.py` explains how, and
   the rare functions the proof is too rough for.
-- **The battlefield is a rectangle.** A shot also ends when it reaches the
-  far side or just after it crosses the top or bottom edge.
+- **The battlefield is a rectangle, and everything on it is a circle.**
+  Players are circles of one fixed size; obstacles are circles of any size,
+  and overlapping ones make blobby terrain. A shot ends at the first player or
+  obstacle it touches, or where it leaves the battlefield. Players can't hit
+  themselves.
+- **Obstacles never change.** A shot that hits one just stops; it doesn't
+  carve the terrain.
+- **Hits are judged against the path as drawn.** The path is sampled and drawn
+  as straight lines between samples, and those lines are what hits, so a shot
+  hits exactly what players see it hit.
 
 ## Function syntax
 
@@ -59,11 +67,12 @@ docstring has the formal grammar.
 
 ## Roadmap
 
-Each step is one reviewable pull request. Steps 1 to 3 stand alone; steps 4
-and 5 build on the site's rooms and client scaffold (see the site roadmap).
+Each step is one reviewable pull request. Steps 1 to 4 stand alone; steps 5
+and 6 build on the site's rooms and client scaffold (see the site roadmap).
 
 1. Expression parser and evaluator for player-entered functions.
 2. Shot paths: starting at the shooter, direction, stopping at breaks.
 3. Battlefield: players, obstacles, and what a shot's path hits.
-4. Game rules on top of rooms: turn order, elimination, winning.
-5. UI: battlefield rendering, function input, turn flow.
+4. Random battlefields: where players and obstacles are placed.
+5. Game rules on top of rooms: turn order, elimination, winning.
+6. UI: battlefield rendering, function input, turn flow.
