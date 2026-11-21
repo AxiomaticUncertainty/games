@@ -44,8 +44,12 @@ class Battlefield:
 
     def __post_init__(self) -> None:
         for player, position in self.players.items():
-            if not (0 <= position.x <= self.width and 0 <= position.y <= self.height):
+            if not self.contains(position):
                 raise ValueError(f"Player {player!r} at {position} is off the battlefield.")
+
+    def contains(self, point: Point) -> bool:
+        """Whether `point` is on the battlefield, edges included."""
+        return 0 <= point.x <= self.width and 0 <= point.y <= self.height
 
 
 class Ending(Enum):
@@ -82,7 +86,7 @@ def fire(
         max_height=battlefield.height - origin.y,
     )
     path = [Point(origin.x + x, origin.y + y) for x, y in traced.points]
-    _end_at_the_edge(path, battlefield.height)
+    _end_at_the_edge(path, battlefield)
 
     targets = [_Target(obstacle) for obstacle in battlefield.obstacles] + [
         _Target(Circle(position, PLAYER_RADIUS), player)
@@ -118,20 +122,24 @@ class _Target(NamedTuple):
     player: PlayerId | None = None  # None for an obstacle
 
 
-def _end_at_the_edge(path: list[Point], height: float) -> None:
+def _end_at_the_edge(path: list[Point], battlefield: Battlefield) -> None:
     """Cut the last step short where it crosses the top or bottom edge.
 
     A traced shot ends just after it crosses one, possibly far beyond it.
     Only the last point can be off the battlefield.
     """
-    if len(path) < 2 or 0 <= path[-1].y <= height:
+    if len(path) < 2 or battlefield.contains(path[-1]):
         return
     end = path.pop()
     start = path[-1]
-    edge = height if end.y > height else 0.0
-    if start.y != edge:  # otherwise the path already ends on the edge
-        t = (edge - start.y) / (end.y - start.y)
-        path.append(Point(start.x + t * (end.x - start.x), edge))
+    edge = battlefield.height if end.y > battlefield.height else 0.0
+    t = (edge - start.y) / (end.y - start.y)
+    crossing = Point(start.x + t * (end.x - start.x), edge)
+    # Exactly equal when `start` was already on the edge. Adding `crossing`
+    # then would make a step of length zero, which has no direction to test
+    # for hits. Any other crossing, however close, is a real step.
+    if crossing != start:
+        path.append(crossing)
 
 
 def _entry(start: Point, end: Point, circle: Circle) -> float | None:
