@@ -183,8 +183,11 @@ class RoomRegistry:
 
         Does nothing if it was already replaced, or its room is gone.
         """
-        room = self._rooms.get(room_id)
-        if room is None or room.connections.get(player_id) is not connection:
+        try:
+            room = self.get(room_id)
+        except RoomNotFound:
+            return
+        if room.connections.get(player_id) is not connection:
             return
         del room.connections[player_id]
         room.last_active = self._clock()
