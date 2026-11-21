@@ -11,12 +11,14 @@ run on the server's one event loop, one at a time between awaits, and the
 registry never awaits.
 """
 
+import hashlib
 import secrets
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
 from hmac import compare_digest
+from typing import NamedTuple
 
 from games_server.games import GAMES, Game, PlayerId
 
@@ -65,7 +67,10 @@ class NotSeated(RoomError):
 class Seat:
     player_id: PlayerId  # public: how other players and the game refer to them
     name: str
-    token: str  # secret: only the player who holds the seat knows it
+    # A hash of the seat's secret token. Only the player who holds the seat
+    # knows the token itself, so the registry's contents can't be used to
+    # take anyone's seat.
+    token_hash: bytes
 
 
 @dataclass
@@ -80,10 +85,19 @@ class Room:
 
     def seat_for(self, token: str) -> Seat:
         """The seat `token` belongs to."""
+        token_hash = _hash(token)
         for seat in self.seats.values():
-            if compare_digest(seat.token, token):
+            if compare_digest(seat.token_hash, token_hash):
                 return seat
         raise NotSeated("You don't have a seat in this room.")
+
+
+class Seated(NamedTuple):
+    """A seat just taken, with its token: the one time the token is known."""
+
+    room: Room
+    seat: Seat
+    token: str
 
 
 class RoomRegistry:
@@ -103,7 +117,7 @@ class RoomRegistry:
             raise RoomNotFound("There's no room with that id. It may have closed.")
         return room
 
-    def create(self, game_id: str, name: str) -> tuple[Room, Seat]:
+    def create(self, game_id: str, name: str) -> Seated:
         """Open a room for `game_id`, with a seat in it for its creator."""
         game = GAMES.get(game_id)
         if game is None:
@@ -112,15 +126,15 @@ class RoomRegistry:
         if len(self._rooms) >= MAX_ROOMS:
             raise TooManyRooms("Too many rooms are open right now. Try joining one instead.")
         room = Room(self._new_room_id(), game, last_active=self._clock())
-        seat = self._add_seat(room, name)  # before storing the room, in case of a bad name
+        seat, token = self._add_seat(room, name)  # before storing the room, in case of a bad name
         self._rooms[room.id] = room
-        return room, seat
+        return Seated(room, seat, token)
 
-    def join(self, room_id: str, name: str) -> tuple[Room, Seat]:
+    def join(self, room_id: str, name: str) -> Seated:
         room = self.get(room_id)
-        seat = self._add_seat(room, name)
+        seat, token = self._add_seat(room, name)
         room.last_active = self._clock()
-        return room, seat
+        return Seated(room, seat, token)
 
     def leave(self, room_id: str, token: str) -> None:
         """Give up the seat `token` belongs to. The room closes if it's empty."""
@@ -130,7 +144,8 @@ class RoomRegistry:
         if not room.seats:
             del self._rooms[room.id]
 
-    def _add_seat(self, room: Room, name: str) -> Seat:
+    def _add_seat(self, room: Room, name: str) -> tuple[Seat, str]:
+        """Seat `name` in `room`. Returns the seat and its token."""
         game = room.game
         if len(room.seats) >= game.max_players:
             raise RoomFull(
@@ -140,9 +155,10 @@ class RoomRegistry:
         if any(seat.name.casefold() == name.casefold() for seat in room.seats.values()):
             raise NameTaken(f"Someone in this room is already called {name}.")
         room.seats_ever += 1
-        seat = Seat(f"p{room.seats_ever}", name, secrets.token_urlsafe(24))
+        token = secrets.token_urlsafe(24)
+        seat = Seat(f"p{room.seats_ever}", name, _hash(token))
         room.seats[seat.player_id] = seat
-        return seat
+        return seat, token
 
     def _close_idle_rooms(self) -> None:
         cutoff = self._clock() - ROOM_IDLE_TIMEOUT.total_seconds()
@@ -167,3 +183,10 @@ def _clean_name(name: str) -> str:
     if not name.isprintable():
         raise InvalidName("Names can't contain control characters.")
     return name
+
+
+def _hash(token: str) -> bytes:
+    # A plain, fast hash is enough: tokens are 192 random bits, so there's
+    # nothing to gain by guessing them, and no need for a salt or a slow hash
+    # as there would be for passwords.
+    return hashlib.sha256(token.encode()).digest()

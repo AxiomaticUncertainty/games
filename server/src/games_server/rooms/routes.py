@@ -31,7 +31,7 @@ from games_server.rooms.registry import (
     RoomFull,
     RoomNotFound,
     RoomRegistry,
-    Seat,
+    Seated,
     TooManyRooms,
     UnknownGame,
 )
@@ -88,8 +88,8 @@ def create_router(registry: RoomRegistry) -> APIRouter:
     @router.post("", status_code=status.HTTP_201_CREATED)
     async def create_room(request: NewRoom) -> SeatView:
         with _answering_errors():
-            room, seat = registry.create(request.game, request.name)
-        return _seat_view(room, seat)
+            seated = registry.create(request.game, request.name)
+        return _seat_view(seated)
 
     @router.get("/{room_id}")
     async def get_room(room_id: str) -> RoomView:
@@ -99,8 +99,8 @@ def create_router(registry: RoomRegistry) -> APIRouter:
     @router.post("/{room_id}/seats", status_code=status.HTTP_201_CREATED)
     async def join_room(room_id: str, request: Joining) -> SeatView:
         with _answering_errors():
-            room, seat = registry.join(room_id, request.name)
-        return _seat_view(room, seat)
+            seated = registry.join(room_id, request.name)
+        return _seat_view(seated)
 
     @router.post("/{room_id}/leave", status_code=status.HTTP_204_NO_CONTENT)
     async def leave_room(room_id: str, request: Leaving) -> None:
@@ -128,5 +128,7 @@ def _room_view(room: Room) -> RoomView:
     )
 
 
-def _seat_view(room: Room, seat: Seat) -> SeatView:
-    return SeatView(room=_room_view(room), player_id=seat.player_id, token=seat.token)
+def _seat_view(seated: Seated) -> SeatView:
+    return SeatView(
+        room=_room_view(seated.room), player_id=seated.seat.player_id, token=seated.token
+    )

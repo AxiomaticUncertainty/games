@@ -37,7 +37,7 @@ A room is where players gather to play one game together.
   the shared password. Taking a seat gives you a display name, unique within
   the room, and a secret token, which the browser keeps. Showing the token
   takes your seat back after a refresh or a dropped connection, instead of
-  joining as someone new.
+  joining as someone new. The server keeps only a hash of it.
 - **Rooms live in memory.** A restart closes them all, which is fine at this
   size. A room closes when its last player leaves, or after two hours with
   nothing happening in it.
