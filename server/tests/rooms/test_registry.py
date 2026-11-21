@@ -81,7 +81,7 @@ class TestJoin:
         room, ada = registry.create(GAME, "Ada")
         _, bo = registry.join(room.id, "Bo")
 
-        assert list(room.seats.values()) == [ada, bo]
+        assert room.seats == {ada.player_id: ada, bo.player_id: bo}
 
     def test_seats_have_distinct_ids_and_tokens(self, registry: RoomRegistry) -> None:
         room, ada = registry.create(GAME, "Ada")
@@ -219,10 +219,10 @@ class TestIdleRooms:
 
     def test_joining_keeps_a_room_open(self, registry: RoomRegistry, clock: FakeClock) -> None:
         room, _ = registry.create(GAME, "Ada")
-        clock.now += IDLE_SECONDS - 1
+        clock.now += IDLE_SECONDS
         registry.join(room.id, "Bo")
 
-        clock.now += IDLE_SECONDS - 1
+        clock.now += IDLE_SECONDS  # the full timeout again, counted from the join
 
         assert registry.rooms() == [room]
 

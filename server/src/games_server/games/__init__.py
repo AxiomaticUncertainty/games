@@ -9,6 +9,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
+type PlayerId = str
+"""A player, as rooms and games refer to them. Rooms give these out with seats."""
+
 
 @dataclass(frozen=True)
 class Game:

@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from hmac import compare_digest
 
-from games_server.games import GAMES, Game
+from games_server.games import GAMES, Game, PlayerId
 
 # Room ids are short enough to read out, from letters and digits that can't be
 # mistaken for each other (no 0/O or 1/I).
@@ -27,8 +27,6 @@ ROOM_ID_LENGTH = 5
 MAX_ROOMS = 100
 ROOM_IDLE_TIMEOUT = timedelta(hours=2)
 MAX_NAME_LENGTH = 20
-
-type PlayerId = str
 
 
 class RoomError(Exception):

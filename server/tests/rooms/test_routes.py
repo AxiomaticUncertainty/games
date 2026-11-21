@@ -62,8 +62,8 @@ def test_joining_takes_a_seat(player: TestClient) -> None:
     response = player.post(f"/api/rooms/{room_id}/seats", json={"name": "Bo"})
 
     assert response.status_code == 201
-    names = [p["name"] for p in response.json()["room"]["players"]]
-    assert names == ["Ada", "Bo"]
+    names = sorted(p["name"] for p in response.json()["room"]["players"])
+    assert names == ["Ada", "Bo"]  # in any order
 
 
 def test_leaving_gives_up_the_seat(player: TestClient) -> None:

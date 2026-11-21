@@ -13,12 +13,8 @@ import math
 import random
 from collections.abc import Iterable, Sequence
 
-from games_server.games.graph_artillery.battlefield import (
-    PLAYER_RADIUS,
-    Battlefield,
-    Circle,
-    PlayerId,
-)
+from games_server.games import PlayerId
+from games_server.games.graph_artillery.battlefield import PLAYER_RADIUS, Battlefield, Circle
 from games_server.games.graph_artillery.shot import Point
 
 WIDTH = 50.0
