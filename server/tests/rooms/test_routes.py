@@ -5,9 +5,12 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from games_server.rooms.registry import ROOM_ID_LENGTH
 from tests.conftest import log_in
 
 GAME = "graph-artillery"
+# No room ever has this id: room ids never use 0 (see ROOM_ID_ALPHABET).
+NO_SUCH_ROOM = "0" * ROOM_ID_LENGTH
 
 
 @pytest.fixture
@@ -80,7 +83,7 @@ def test_leaving_gives_up_the_seat(player: TestClient) -> None:
     ("method", "path", "body", "status", "message"),
     [
         ("POST", "/api/rooms", {"game": "chess", "name": "Bo"}, 404, "chess"),
-        ("GET", "/api/rooms/ZZZZZ", None, 404, "no room"),
+        ("GET", f"/api/rooms/{NO_SUCH_ROOM}", None, 404, "no room"),
         ("POST", "/api/rooms/{room}/seats", {"name": "ada"}, 409, "already"),
         ("POST", "/api/rooms/{room}/seats", {"name": " "}, 422, "Choose"),
         ("POST", "/api/rooms/{room}/leave", {"token": "nope"}, 403, "seat"),

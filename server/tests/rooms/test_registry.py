@@ -20,6 +20,8 @@ from games_server.rooms.registry import (
 GAME = "graph-artillery"
 MAX_PLAYERS = GAMES[GAME].max_players
 IDLE_SECONDS = ROOM_IDLE_TIMEOUT.total_seconds()
+# No room ever has this id: room ids never use 0 (see ROOM_ID_ALPHABET).
+NO_SUCH_ROOM = "0" * ROOM_ID_LENGTH
 
 
 class FakeClock:
@@ -97,7 +99,7 @@ class TestJoin:
 
     def test_rejects_an_unknown_room(self, registry: RoomRegistry) -> None:
         with pytest.raises(RoomNotFound):
-            registry.join("ZZZZZ", "Bo")
+            registry.join(NO_SUCH_ROOM, "Bo")
 
     def test_rejects_a_name_already_taken_whatever_its_case(self, registry: RoomRegistry) -> None:
         room = registry.create(GAME, "Ada").room
