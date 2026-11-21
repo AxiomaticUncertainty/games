@@ -255,6 +255,7 @@ name = "games-server"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "anyio" },
     { name = "argon2-cffi" },
     { name = "fastapi" },
     { name = "itsdangerous" },
@@ -272,6 +273,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = ">=4" },
     { name = "argon2-cffi", specifier = ">=25.1.0" },
     { name = "fastapi", specifier = ">=0.165.0" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
