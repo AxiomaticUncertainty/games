@@ -3,12 +3,18 @@
 Rooms live in memory, so a server restart closes them all. That's fine for a
 site this size, and keeps the state in one place.
 
-A room closes when its last player leaves, or when nothing has happened in it
-for ROOM_IDLE_TIMEOUT, so rooms people walked away from don't pile up.
+Players connect to a room they have a seat in, to follow it live. Whenever
+who's in a room, or who's connected, changes, every connection is sent the
+room as it now is.
+
+A room closes when its last player leaves, or when no one has been connected
+and nothing has happened in it for ROOM_IDLE_TIMEOUT, so rooms people walked
+away from don't pile up.
 
 The registry isn't thread-safe. The API's endpoints are `async`, so they all
 run on the server's one event loop, one at a time between awaits, and the
-registry never awaits.
+registry never awaits: it queues messages on connections rather than sending
+them (see `connection`).
 """
 
 import hashlib
@@ -21,6 +27,8 @@ from hmac import compare_digest
 from typing import NamedTuple
 
 from games_server.games import GAMES, Game, PlayerId
+from games_server.rooms.connection import CloseCode, Connection
+from games_server.rooms.views import room_view
 
 # Room ids are short enough to read out, from letters and digits that can't be
 # mistaken for each other (no 0/O or 1/I).
@@ -82,6 +90,9 @@ class Room:
     # changes it.
     seats: dict[PlayerId, Seat] = field(default_factory=dict)
     seats_ever: int = 0  # so player ids are never reused within a room
+    # Each seated player's live connection, if they have one. Only the
+    # registry changes it.
+    connections: dict[PlayerId, Connection] = field(default_factory=dict)
 
     def seat_for(self, token: str) -> Seat:
         """The seat `token` belongs to."""
@@ -134,15 +145,56 @@ class RoomRegistry:
         room = self.get(room_id)
         seat, token = self._add_seat(room, name)
         room.last_active = self._clock()
+        self._announce(room)
         return Seated(room, seat, token)
 
     def leave(self, room_id: str, token: str) -> None:
         """Give up the seat `token` belongs to. The room closes if it's empty."""
         room = self.get(room_id)
-        del room.seats[room.seat_for(token).player_id]
+        seat = room.seat_for(token)
+        del room.seats[seat.player_id]
+        if connection := room.connections.pop(seat.player_id, None):
+            connection.close(CloseCode.GONE, "You left the room.")
         room.last_active = self._clock()
-        if not room.seats:
+        if room.seats:
+            self._announce(room)
+        else:
             del self._rooms[room.id]
+
+    def connect(self, room_id: str, token: str) -> tuple[Room, Seat, Connection]:
+        """A new live connection for the seat `token` belongs to.
+
+        If the seat was already connected, as from another tab, that
+        connection is closed: a seat has one connection at a time.
+        """
+        room = self.get(room_id)
+        seat = room.seat_for(token)
+        if previous := room.connections.get(seat.player_id):
+            previous.close(CloseCode.REPLACED, "You opened this room somewhere else.")
+        connection = Connection()
+        connection.send({"type": "welcome", "player_id": seat.player_id})
+        room.connections[seat.player_id] = connection
+        room.last_active = self._clock()
+        self._announce(room)
+        return room, seat, connection
+
+    def disconnect(self, room_id: str, player_id: PlayerId, connection: Connection) -> None:
+        """Forget `connection`, which has ended.
+
+        Does nothing if it was already replaced, or its room is gone.
+        """
+        room = self._rooms.get(room_id)
+        if room is None or room.connections.get(player_id) is not connection:
+            return
+        del room.connections[player_id]
+        room.last_active = self._clock()
+        self._announce(room)
+
+    def _announce(self, room: Room) -> None:
+        """Send everyone connected to `room` what it now looks like."""
+        message = {"type": "room", "room": room_view(room).model_dump()}
+        for connection in room.connections.values():
+            connection.send(message)
 
     def _add_seat(self, room: Room, name: str) -> tuple[Seat, str]:
         """Seat `name` in `room`. Returns the seat and its token."""
@@ -163,7 +215,7 @@ class RoomRegistry:
     def _close_idle_rooms(self) -> None:
         cutoff = self._clock() - ROOM_IDLE_TIMEOUT.total_seconds()
         for room in list(self._rooms.values()):
-            if room.last_active < cutoff:
+            if not room.connections and room.last_active < cutoff:
                 del self._rooms[room.id]
 
     def _new_room_id(self) -> str:

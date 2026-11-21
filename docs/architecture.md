@@ -38,9 +38,13 @@ A room is where players gather to play one game together.
   the room, and a secret token, which the browser keeps. Showing the token
   takes your seat back after a refresh or a dropped connection, instead of
   joining as someone new. The server keeps only a hash of it.
+- **Players follow a room live over a WebSocket**, one per seat. Whenever who
+  is in the room, or who is connected, changes, everyone connected is sent the
+  room as it now is. Opening a room somewhere else, as in a second tab, takes
+  over the seat's connection.
 - **Rooms live in memory.** A restart closes them all, which is fine at this
   size. A room closes when its last player leaves, or after two hours with
-  nothing happening in it.
+  nothing happening in it and no one connected.
 
 ## Repository layout
 
@@ -60,8 +64,9 @@ game's own doc.
 3. Client scaffold: Vite + React + TypeScript, served by the server.
 4. Rooms and realtime connections, in three pull requests:
    1. Rooms on the server: list, create, join, and leave them over HTTP.
-   2. Realtime connections: a WebSocket per player, showing who is connected,
-      and passing messages between players and the room's game.
+   2. Realtime connections: a WebSocket per player, showing who is connected.
+      Passing messages between players and the room's game comes with the
+      first game's rules, so it's shaped by a real game.
    3. The lobby and room pages in the client.
 5. Packaging: Dockerfile and deployment notes.
 
