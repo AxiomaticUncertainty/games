@@ -38,6 +38,11 @@ password gate, rooms, and the server deciding every outcome) is in
   and overlapping ones make blobby terrain. A shot ends at the first player or
   obstacle it touches, or where it leaves the battlefield. Players can't hit
   themselves.
+- **Every game gets a new random battlefield**, 50 wide and 30 tall. It has
+  10 to 20 obstacles of random sizes, placed anywhere. Then players go where
+  there's room: clear of obstacles, away from the edges, and at least 10 apart,
+  so nobody starts next to an easy target. Battlefields come from a seed, so
+  the same seed always gives the same battlefield.
 - **Obstacles never change.** A shot that hits one just stops; it doesn't
   carve the terrain.
 - **Hits are judged against the path as drawn.** The path is sampled and drawn
