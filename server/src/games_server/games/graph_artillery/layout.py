@@ -79,17 +79,25 @@ def _place_players(
     """Where each player stands, or None if one of them finds no room."""
     positions: dict[PlayerId, Point] = {}
     for player in players:
-        for _ in range(SPOTS_PER_PLAYER):
-            spot = Point(
-                rng.uniform(EDGE_MARGIN, WIDTH - EDGE_MARGIN),
-                rng.uniform(EDGE_MARGIN, HEIGHT - EDGE_MARGIN),
-            )
-            if _has_room(spot, obstacles, positions.values()):
-                positions[player] = spot
-                break
-        else:
+        spot = _find_room(obstacles, positions.values(), rng)
+        if spot is None:
             return None
+        positions[player] = spot
     return positions
+
+
+def _find_room(
+    obstacles: Sequence[Circle], others: Iterable[Point], rng: random.Random
+) -> Point | None:
+    """A random spot with room for a player, or None after SPOTS_PER_PLAYER tries."""
+    for _ in range(SPOTS_PER_PLAYER):
+        spot = Point(
+            rng.uniform(EDGE_MARGIN, WIDTH - EDGE_MARGIN),
+            rng.uniform(EDGE_MARGIN, HEIGHT - EDGE_MARGIN),
+        )
+        if _has_room(spot, obstacles, others):
+            return spot
+    return None
 
 
 def _has_room(spot: Point, obstacles: Sequence[Circle], others: Iterable[Point]) -> bool:
