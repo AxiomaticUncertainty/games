@@ -18,7 +18,7 @@ class RoomView(BaseModel):
     id: str
     game: str
     max_players: int
-    players: list[PlayerView]  # in the order they joined
+    players: list[PlayerView]  # in no particular order
 
 
 class SeatView(BaseModel):
