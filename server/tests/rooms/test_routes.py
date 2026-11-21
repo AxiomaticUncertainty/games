@@ -33,7 +33,7 @@ def test_creating_a_room_seats_its_creator(player: TestClient) -> None:
     seat = create(player)
 
     assert seat["room"]["game"] == GAME
-    assert seat["room"]["players"] == [{"id": seat["player_id"], "name": "Ada"}]
+    assert seat["room"]["players"] == [{"id": seat["player_id"], "name": "Ada", "connected": False}]
     assert seat["token"]
 
 

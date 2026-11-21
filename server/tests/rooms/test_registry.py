@@ -245,3 +245,88 @@ class TestIdleRooms:
         registry.join(older.id, "Cy")
 
         assert registry.rooms() == [older, newer]
+
+
+class TestConnections:
+    def test_connecting_marks_the_player_connected(self, registry: RoomRegistry) -> None:
+        room, ada = registry.create(GAME, "Ada")
+
+        _, seat, connection = registry.connect(room.id, ada.token)
+
+        assert seat == ada
+        assert room.connections == {ada.player_id: connection}
+
+    def test_rejects_a_token_with_no_seat(self, registry: RoomRegistry) -> None:
+        room, _ = registry.create(GAME, "Ada")
+
+        with pytest.raises(NotSeated):
+            registry.connect(room.id, "not a token")
+
+    def test_connecting_again_closes_the_old_connection(self, registry: RoomRegistry) -> None:
+        room, ada = registry.create(GAME, "Ada")
+        _, _, old = registry.connect(room.id, ada.token)
+
+        _, _, new = registry.connect(room.id, ada.token)
+
+        assert old.closed
+        assert room.connections == {ada.player_id: new}
+
+    def test_disconnecting_marks_the_player_disconnected(self, registry: RoomRegistry) -> None:
+        room, ada = registry.create(GAME, "Ada")
+        _, _, connection = registry.connect(room.id, ada.token)
+
+        registry.disconnect(room.id, ada.player_id, connection)
+
+        assert room.connections == {}
+
+    def test_a_replaced_connection_ending_changes_nothing(self, registry: RoomRegistry) -> None:
+        room, ada = registry.create(GAME, "Ada")
+        _, _, old = registry.connect(room.id, ada.token)
+        _, _, new = registry.connect(room.id, ada.token)
+
+        registry.disconnect(room.id, ada.player_id, old)
+
+        assert room.connections == {ada.player_id: new}
+
+    def test_a_connection_ending_after_its_room_closed_changes_nothing(
+        self, registry: RoomRegistry
+    ) -> None:
+        room, ada = registry.create(GAME, "Ada")
+        _, _, connection = registry.connect(room.id, ada.token)
+        registry.leave(room.id, ada.token)
+
+        registry.disconnect(room.id, ada.player_id, connection)
+
+        assert registry.rooms() == []
+
+    def test_leaving_closes_the_connection(self, registry: RoomRegistry) -> None:
+        room, ada = registry.create(GAME, "Ada")
+        registry.join(room.id, "Bo")
+        _, _, connection = registry.connect(room.id, ada.token)
+
+        registry.leave(room.id, ada.token)
+
+        assert connection.closed
+        assert room.connections == {}
+
+    def test_a_room_with_a_connection_never_idles(
+        self, registry: RoomRegistry, clock: FakeClock
+    ) -> None:
+        room, ada = registry.create(GAME, "Ada")
+        registry.connect(room.id, ada.token)
+
+        clock.now += 10 * IDLE_SECONDS
+
+        assert registry.rooms() == [room]
+
+    def test_idle_time_counts_from_the_last_disconnect(
+        self, registry: RoomRegistry, clock: FakeClock
+    ) -> None:
+        room, ada = registry.create(GAME, "Ada")
+        _, _, connection = registry.connect(room.id, ada.token)
+        clock.now += 10 * IDLE_SECONDS
+        registry.disconnect(room.id, ada.player_id, connection)
+
+        clock.now += IDLE_SECONDS - 1
+
+        assert registry.rooms() == [room]
