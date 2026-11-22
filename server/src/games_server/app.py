@@ -8,6 +8,7 @@ a function rather than at import time lets each test get a fresh, isolated app.
 import os
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from games_server import health
@@ -16,6 +17,8 @@ from games_server.auth.gate import LOGIN_PATH, PasswordGate
 from games_server.auth.throttle import LoginThrottle
 from games_server.auth.tokens import SessionTokens
 from games_server.config import Settings
+from games_server.rooms import routes as room_routes
+from games_server.rooms.registry import RoomRegistry
 
 # Paths reachable without the password: the login form itself, and the health
 # check that hosting platforms call.
@@ -41,8 +44,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(PasswordGate, tokens=tokens, public_paths=PUBLIC_PATHS)
     app.include_router(health.router)
     app.include_router(auth_routes.create_router(settings.site_password_hash, tokens, throttle))
+    app.include_router(room_routes.create_router(RoomRegistry()))
 
     if settings.client_dir is not None:
+        index_page = settings.client_dir / "index.html"
+
+        # The client's own pages, other than "/". The client reads the path
+        # and shows the right page, so each is answered with index.html.
+        @app.get("/rooms/{room_id}", include_in_schema=False)
+        async def room_page(room_id: str) -> FileResponse:
+            return FileResponse(index_page)
+
         # Mounted last: "/" matches every path, so it only receives requests
         # that no route above claimed. html=True serves index.html for "/".
         app.mount("/", StaticFiles(directory=settings.client_dir, html=True), name="client")

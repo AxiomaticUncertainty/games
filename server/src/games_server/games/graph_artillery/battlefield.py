@@ -20,13 +20,12 @@ from enum import Enum
 from itertools import pairwise
 from typing import NamedTuple
 
+from games_server.games import PlayerId
 from games_server.games.graph_artillery import shot
 from games_server.games.graph_artillery.expression import Expression
 from games_server.games.graph_artillery.shot import Direction, Point
 
 PLAYER_RADIUS = 0.5
-
-type PlayerId = str
 
 
 class Circle(NamedTuple):

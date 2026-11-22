@@ -7,12 +7,15 @@ import { passwordGate } from "./dev/passwordGate";
 // paths to the Python server. In production the Python server serves the
 // built client itself, so none of this applies there.
 const PYTHON_SERVER = "http://127.0.0.1:8000";
-const SERVER_PATHS = ["/login", "/logout", "/healthz"];
+const SERVER_PATHS = ["/login", "/logout", "/healthz", "/api"];
 
 export default defineConfig({
   plugins: [react(), passwordGate({ server: PYTHON_SERVER, serverPaths: SERVER_PATHS })],
   server: {
-    proxy: Object.fromEntries(SERVER_PATHS.map((path) => [path, PYTHON_SERVER])),
+    proxy: Object.fromEntries(
+      // ws: also forward WebSocket connections, such as a room's live connection.
+      SERVER_PATHS.map((path) => [path, { target: PYTHON_SERVER, ws: true }]),
+    ),
   },
   test: {
     environment: "jsdom",

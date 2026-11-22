@@ -1,0 +1,270 @@
+"""The rooms that are open, and who has a seat in each.
+
+Rooms live in memory, so a server restart closes them all. That's fine for a
+site this size, and keeps the state in one place.
+
+Players connect to a room they have a seat in, to follow it live. Whenever
+who's in a room, or who's connected, changes, every connection is sent the
+room as it now is.
+
+A room closes when its last player leaves, or when no one has been connected
+and nothing has happened in it for ROOM_IDLE_TIMEOUT, so rooms people walked
+away from don't pile up.
+
+The registry isn't thread-safe. The API's endpoints are `async`, so they all
+run on the server's one event loop, one at a time between awaits, and the
+registry never awaits: it queues messages on connections rather than sending
+them (see `connection`).
+"""
+
+import hashlib
+import secrets
+import time
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from datetime import timedelta
+from hmac import compare_digest
+from types import MappingProxyType
+from typing import NamedTuple
+
+from games_server.games import GAMES, Game, PlayerId
+from games_server.rooms.connection import CloseCode, Connection
+from games_server.rooms.views import room_view
+
+# Room ids are short enough to read out, from letters and digits that can't be
+# mistaken for each other (no 0/O or 1/I).
+ROOM_ID_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+ROOM_ID_LENGTH = 5
+MAX_ROOMS = 100
+ROOM_IDLE_TIMEOUT = timedelta(hours=2)
+MAX_NAME_LENGTH = 20
+
+
+class RoomError(Exception):
+    """A request about rooms that can't be done. The message is for players."""
+
+
+class UnknownGame(RoomError):
+    pass
+
+
+class RoomNotFound(RoomError):
+    pass
+
+
+class RoomFull(RoomError):
+    pass
+
+
+class TooManyRooms(RoomError):
+    pass
+
+
+class InvalidName(RoomError):
+    pass
+
+
+class NameTaken(RoomError):
+    pass
+
+
+class NotSeated(RoomError):
+    """The token doesn't belong to a seat in the room."""
+
+
+@dataclass(frozen=True)
+class Seat:
+    player_id: PlayerId  # public: how other players and the game refer to them
+    name: str
+    # A hash of the seat's secret token. Only the player who holds the seat
+    # knows the token itself, so the registry's contents can't be used to
+    # take anyone's seat.
+    token_hash: bytes
+
+
+@dataclass
+class Room:
+    id: str
+    game: Game
+    last_active: float  # in the registry's clock's seconds
+    # Everyone with a seat, in the order they joined. Only the registry
+    # changes it.
+    seats: dict[PlayerId, Seat] = field(default_factory=dict)
+    seats_ever: int = 0  # so player ids are never reused within a room
+    # Each seated player's live connection, if they have one. Changed only by
+    # `attach` and `let_go`, which close every connection the room stops
+    # holding. A connection dropped without being closed would leave its
+    # WebSocket open, with nothing ever sent on it again.
+    _connections: dict[PlayerId, Connection] = field(default_factory=dict, init=False)
+
+    @property
+    def connections(self) -> Mapping[PlayerId, Connection]:
+        return MappingProxyType(self._connections)
+
+    def attach(self, player_id: PlayerId, connection: Connection) -> None:
+        """Make `connection` the player's, closing any they had before: a seat
+        has one connection at a time."""
+        self.let_go(player_id, CloseCode.REPLACED, "You opened this room somewhere else.")
+        self._connections[player_id] = connection
+
+    def let_go(self, player_id: PlayerId, code: CloseCode, reason: str) -> None:
+        """Close the player's connection, if they have one, and forget it."""
+        if connection := self._connections.pop(player_id, None):
+            connection.close(code, reason)
+
+    def seat_for(self, token: str) -> Seat:
+        """The seat `token` belongs to."""
+        token_hash = _hash(token)
+        for seat in self.seats.values():
+            if compare_digest(seat.token_hash, token_hash):
+                return seat
+        raise NotSeated("You don't have a seat in this room.")
+
+
+class Seated(NamedTuple):
+    """A seat just taken, with its token: the one time the token is known."""
+
+    room: Room
+    seat: Seat
+    token: str
+
+
+class RoomRegistry:
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._rooms: dict[str, Room] = {}
+
+    def rooms(self) -> list[Room]:
+        """The open rooms, the most recently active first."""
+        self._close_idle_rooms()
+        return sorted(self._rooms.values(), key=lambda room: room.last_active, reverse=True)
+
+    def get(self, room_id: str) -> Room:
+        self._close_idle_rooms()
+        room = self._rooms.get(room_id.upper())
+        if room is None:
+            raise RoomNotFound("There's no room with that id. It may have closed.")
+        return room
+
+    def create(self, game_id: str, name: str) -> Seated:
+        """Open a room for `game_id`, with a seat in it for its creator."""
+        game = GAMES.get(game_id)
+        if game is None:
+            raise UnknownGame(f"There's no game called {game_id!r}.")
+        self._close_idle_rooms()
+        if len(self._rooms) >= MAX_ROOMS:
+            raise TooManyRooms("Too many rooms are open right now. Try joining one instead.")
+        room = Room(self._new_room_id(), game, last_active=self._clock())
+        seat, token = self._add_seat(room, name)  # before storing the room, in case of a bad name
+        self._rooms[room.id] = room
+        return Seated(room, seat, token)
+
+    def join(self, room_id: str, name: str) -> Seated:
+        room = self.get(room_id)
+        seat, token = self._add_seat(room, name)
+        room.last_active = self._clock()
+        self._announce(room)
+        return Seated(room, seat, token)
+
+    def leave(self, room_id: str, token: str) -> None:
+        """Give up the seat `token` belongs to. The room closes if it's empty."""
+        room = self.get(room_id)
+        seat = room.seat_for(token)
+        del room.seats[seat.player_id]
+        room.let_go(seat.player_id, CloseCode.GONE, "You left the room.")
+        room.last_active = self._clock()
+        if room.seats:
+            self._announce(room)
+        else:
+            self._remove(room)
+
+    def connect(self, room_id: str, token: str) -> tuple[Room, Seat, Connection]:
+        """A new live connection for the seat `token` belongs to.
+
+        If the seat was already connected, as from another tab, that
+        connection is closed: a seat has one connection at a time.
+        """
+        room = self.get(room_id)
+        seat = room.seat_for(token)
+        connection = Connection()
+        connection.send({"type": "welcome", "player_id": seat.player_id})
+        room.attach(seat.player_id, connection)
+        room.last_active = self._clock()
+        self._announce(room)
+        return room, seat, connection
+
+    def disconnect(self, room_id: str, player_id: PlayerId, connection: Connection) -> None:
+        """Forget `connection`, which has ended.
+
+        Does nothing if it was already replaced, or its room is gone.
+        """
+        try:
+            room = self.get(room_id)
+        except RoomNotFound:
+            return
+        if room.connections.get(player_id) is not connection:
+            return
+        # It has ended already, so closing it changes nothing. Letting go
+        # always closes, though, so nothing can be dropped while still open.
+        room.let_go(player_id, CloseCode.GONE, "")
+        room.last_active = self._clock()
+        self._announce(room)
+
+    def _announce(self, room: Room) -> None:
+        """Send everyone connected to `room` what it now looks like."""
+        message = {"type": "room", "room": room_view(room).model_dump()}
+        for connection in room.connections.values():
+            connection.send(message)
+
+    def _add_seat(self, room: Room, name: str) -> tuple[Seat, str]:
+        """Seat `name` in `room`. Returns the seat and its token."""
+        game = room.game
+        if len(room.seats) >= game.max_players:
+            raise RoomFull(
+                f"This room is full: {game.name} is for at most {game.max_players} players."
+            )
+        name = _clean_name(name)
+        if any(seat.name.casefold() == name.casefold() for seat in room.seats.values()):
+            raise NameTaken(f"Someone in this room is already called {name}.")
+        room.seats_ever += 1
+        token = secrets.token_urlsafe(24)
+        seat = Seat(f"p{room.seats_ever}", name, _hash(token))
+        room.seats[seat.player_id] = seat
+        return seat, token
+
+    def _close_idle_rooms(self) -> None:
+        cutoff = self._clock() - ROOM_IDLE_TIMEOUT.total_seconds()
+        for room in list(self._rooms.values()):
+            if not room.connections and room.last_active < cutoff:
+                self._remove(room)
+
+    def _remove(self, room: Room) -> None:
+        """Close `room`, along with any connections still in it."""
+        for player_id in list(room.connections):
+            room.let_go(player_id, CloseCode.GONE, "The room closed.")
+        del self._rooms[room.id]
+
+    def _new_room_id(self) -> str:
+        while True:
+            room_id = "".join(secrets.choice(ROOM_ID_ALPHABET) for _ in range(ROOM_ID_LENGTH))
+            if room_id not in self._rooms:
+                return room_id
+
+
+def _clean_name(name: str) -> str:
+    """`name` with its spaces tidied, or InvalidName if it can't be used."""
+    name = " ".join(name.split())
+    if not name:
+        raise InvalidName("Choose a name.")
+    if len(name) > MAX_NAME_LENGTH:
+        raise InvalidName(f"Names can be at most {MAX_NAME_LENGTH} characters.")
+    if not name.isprintable():
+        raise InvalidName("Names can't contain control characters.")
+    return name
+
+
+def _hash(token: str) -> bytes:
+    # A plain, fast hash is enough: tokens are 192 random bits, so there's
+    # nothing to gain by guessing them, and no need for a salt or a slow hash
+    # as there would be for passwords.
+    return hashlib.sha256(token.encode()).digest()

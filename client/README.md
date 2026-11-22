@@ -22,7 +22,7 @@ npm run dev
 ```
 
 Open http://localhost:5173. Vite serves the client with hot reload and
-forwards server paths (`/login`, `/logout`, `/healthz`) to the Python server
+forwards server paths (`/login`, `/logout`, `/healthz`, `/api`) to the Python server
 on port 8000; the list is in `vite.config.ts`.
 
 The password gate applies in development too: before Vite serves anything, it
@@ -54,8 +54,11 @@ everything else.
 ```
 index.html        page shell; Vite injects the built script
 src/main.tsx      entry point: mounts <App /> into #root
-src/App.tsx       the home page
-src/games.ts      the list of games shown on the home page
+src/App.tsx       the site's header, and the page for the current path
+src/navigation.ts the site's pages, and moving between them
+src/pages/        one component per page: the lobby, and a room
+src/rooms/        the rooms API, live room connections, and saved seats
+src/games.ts      the list of games shown in the lobby
 src/styles.css    site-wide styles; colors match the login page
 src/*.test.tsx    tests, next to the code they cover
 dev/              development-only Vite plugins

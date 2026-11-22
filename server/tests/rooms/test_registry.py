@@ -1,0 +1,347 @@
+import pytest
+
+from games_server.games import GAMES
+from games_server.rooms.registry import (
+    MAX_NAME_LENGTH,
+    MAX_ROOMS,
+    ROOM_ID_ALPHABET,
+    ROOM_ID_LENGTH,
+    ROOM_IDLE_TIMEOUT,
+    InvalidName,
+    NameTaken,
+    NotSeated,
+    RoomFull,
+    RoomNotFound,
+    RoomRegistry,
+    TooManyRooms,
+    UnknownGame,
+)
+
+GAME = "graph-artillery"
+MAX_PLAYERS = GAMES[GAME].max_players
+IDLE_SECONDS = ROOM_IDLE_TIMEOUT.total_seconds()
+# No room ever has this id: room ids never use 0 (see ROOM_ID_ALPHABET).
+NO_SUCH_ROOM = "0" * ROOM_ID_LENGTH
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+@pytest.fixture
+def clock() -> FakeClock:
+    return FakeClock()
+
+
+@pytest.fixture
+def registry(clock: FakeClock) -> RoomRegistry:
+    return RoomRegistry(clock)
+
+
+class TestCreate:
+    def test_creator_gets_the_first_seat(self, registry: RoomRegistry) -> None:
+        room, seat, _ = registry.create(GAME, "Ada")
+
+        assert list(room.seats.values()) == [seat]
+        assert seat.name == "Ada"
+
+    def test_room_is_listed(self, registry: RoomRegistry) -> None:
+        room = registry.create(GAME, "Ada").room
+
+        assert registry.rooms() == [room]
+
+    def test_room_ids_are_short_and_unambiguous(self, registry: RoomRegistry) -> None:
+        room = registry.create(GAME, "Ada").room
+
+        assert len(room.id) == ROOM_ID_LENGTH
+        assert set(room.id) <= set(ROOM_ID_ALPHABET)
+
+    def test_rejects_an_unknown_game(self, registry: RoomRegistry) -> None:
+        with pytest.raises(UnknownGame):
+            registry.create("chess", "Ada")
+
+    def test_bad_name_opens_no_room(self, registry: RoomRegistry) -> None:
+        with pytest.raises(InvalidName):
+            registry.create(GAME, "")
+
+        assert registry.rooms() == []
+
+    def test_limits_how_many_rooms_are_open(self, registry: RoomRegistry) -> None:
+        for _ in range(MAX_ROOMS):
+            registry.create(GAME, "Ada")
+
+        with pytest.raises(TooManyRooms):
+            registry.create(GAME, "Ada")
+
+
+class TestJoin:
+    def test_gives_a_new_seat(self, registry: RoomRegistry) -> None:
+        room, ada, _ = registry.create(GAME, "Ada")
+        bo = registry.join(room.id, "Bo").seat
+
+        assert room.seats == {ada.player_id: ada, bo.player_id: bo}
+
+    def test_seats_have_distinct_ids_and_tokens(self, registry: RoomRegistry) -> None:
+        room, ada, ada_token = registry.create(GAME, "Ada")
+        _, bo, bo_token = registry.join(room.id, "Bo")
+
+        assert ada.player_id != bo.player_id
+        assert ada_token != bo_token
+
+    def test_room_ids_ignore_case(self, registry: RoomRegistry) -> None:
+        room = registry.create(GAME, "Ada").room
+
+        registry.join(room.id.lower(), "Bo")
+
+    def test_rejects_an_unknown_room(self, registry: RoomRegistry) -> None:
+        with pytest.raises(RoomNotFound):
+            registry.join(NO_SUCH_ROOM, "Bo")
+
+    def test_rejects_a_name_already_taken_whatever_its_case(self, registry: RoomRegistry) -> None:
+        room = registry.create(GAME, "Ada").room
+
+        with pytest.raises(NameTaken):
+            registry.join(room.id, "ADA")
+
+    def test_rejects_joining_a_full_room(self, registry: RoomRegistry) -> None:
+        room = registry.create(GAME, "player 0").room
+        for n in range(1, MAX_PLAYERS):
+            registry.join(room.id, f"player {n}")
+
+        with pytest.raises(RoomFull):
+            registry.join(room.id, "one too many")
+
+    def test_player_ids_are_not_reused(self, registry: RoomRegistry) -> None:
+        # A new player mustn't be mistaken for one who left.
+        room, ada, _ = registry.create(GAME, "Ada")
+        _, bo, bo_token = registry.join(room.id, "Bo")
+        registry.leave(room.id, bo_token)
+        cy = registry.join(room.id, "Cy").seat
+
+        assert cy.player_id not in (ada.player_id, bo.player_id)
+
+
+class TestNames:
+    def test_tidies_spaces(self, registry: RoomRegistry) -> None:
+        seat = registry.create(GAME, "  Ada \t Lovelace ").seat
+
+        assert seat.name == "Ada Lovelace"
+
+    @pytest.mark.parametrize(
+        ("name", "message"),
+        [
+            ("", "Choose a name"),
+            ("   ", "Choose a name"),
+            ("x" * (MAX_NAME_LENGTH + 1), "at most"),
+            ("Ada\x00", "control characters"),
+            ("Ada​", "control characters"),  # zero-width space
+        ],
+    )
+    def test_rejects_unusable_names(self, registry: RoomRegistry, name: str, message: str) -> None:
+        with pytest.raises(InvalidName, match=message):
+            registry.create(GAME, name)
+
+    def test_allows_a_name_of_the_maximum_length(self, registry: RoomRegistry) -> None:
+        registry.create(GAME, "x" * MAX_NAME_LENGTH)
+
+
+class TestSeats:
+    def test_keeps_only_a_hash_of_the_token(self, registry: RoomRegistry) -> None:
+        room, _, token = registry.create(GAME, "Ada")
+
+        assert token not in repr(room)
+
+    def test_token_finds_its_seat(self, registry: RoomRegistry) -> None:
+        room, ada, ada_token = registry.create(GAME, "Ada")
+        registry.join(room.id, "Bo")
+
+        assert room.seat_for(ada_token) == ada
+
+    def test_rejects_a_token_with_no_seat(self, registry: RoomRegistry) -> None:
+        room = registry.create(GAME, "Ada").room
+
+        with pytest.raises(NotSeated):
+            room.seat_for("not a token")
+
+    def test_token_from_another_room_has_no_seat(self, registry: RoomRegistry) -> None:
+        room = registry.create(GAME, "Ada").room
+        elsewhere_token = registry.create(GAME, "Bo").token
+
+        with pytest.raises(NotSeated):
+            room.seat_for(elsewhere_token)
+
+
+class TestLeave:
+    def test_frees_the_seat(self, registry: RoomRegistry) -> None:
+        room, ada, _ = registry.create(GAME, "Ada")
+        bo_token = registry.join(room.id, "Bo").token
+
+        registry.leave(room.id, bo_token)
+
+        assert list(room.seats.values()) == [ada]
+
+    def test_frees_the_name(self, registry: RoomRegistry) -> None:
+        room = registry.create(GAME, "Ada").room
+        bo_token = registry.join(room.id, "Bo").token
+        registry.leave(room.id, bo_token)
+
+        registry.join(room.id, "Bo")
+
+    def test_last_player_leaving_closes_the_room(self, registry: RoomRegistry) -> None:
+        room, _, ada_token = registry.create(GAME, "Ada")
+
+        registry.leave(room.id, ada_token)
+
+        assert registry.rooms() == []
+        with pytest.raises(RoomNotFound):
+            registry.get(room.id)
+
+    def test_rejects_a_token_with_no_seat(self, registry: RoomRegistry) -> None:
+        room = registry.create(GAME, "Ada").room
+
+        with pytest.raises(NotSeated):
+            registry.leave(room.id, "not a token")
+
+
+class TestIdleRooms:
+    def test_idle_room_closes(self, registry: RoomRegistry, clock: FakeClock) -> None:
+        registry.create(GAME, "Ada")
+
+        clock.now += IDLE_SECONDS + 1
+
+        assert registry.rooms() == []
+
+    def test_room_stays_open_until_the_timeout(
+        self, registry: RoomRegistry, clock: FakeClock
+    ) -> None:
+        room = registry.create(GAME, "Ada").room
+
+        clock.now += IDLE_SECONDS
+
+        assert registry.rooms() == [room]
+
+    def test_joining_keeps_a_room_open(self, registry: RoomRegistry, clock: FakeClock) -> None:
+        room = registry.create(GAME, "Ada").room
+        clock.now += IDLE_SECONDS
+        registry.join(room.id, "Bo")
+
+        clock.now += IDLE_SECONDS  # the full timeout again, counted from the join
+
+        assert registry.rooms() == [room]
+
+    def test_closed_rooms_free_up_room_for_more(
+        self, registry: RoomRegistry, clock: FakeClock
+    ) -> None:
+        for _ in range(MAX_ROOMS):
+            registry.create(GAME, "Ada")
+        clock.now += IDLE_SECONDS + 1
+
+        registry.create(GAME, "Ada")
+
+    def test_most_recently_active_rooms_are_listed_first(
+        self, registry: RoomRegistry, clock: FakeClock
+    ) -> None:
+        older = registry.create(GAME, "Ada").room
+        clock.now += 1
+        newer = registry.create(GAME, "Bo").room
+        clock.now += 1
+        registry.join(older.id, "Cy")
+
+        assert registry.rooms() == [older, newer]
+
+
+class TestConnections:
+    def test_connecting_marks_the_player_connected(self, registry: RoomRegistry) -> None:
+        room, ada, ada_token = registry.create(GAME, "Ada")
+
+        _, seat, connection = registry.connect(room.id, ada_token)
+
+        assert seat == ada
+        assert room.connections == {ada.player_id: connection}
+
+    def test_rejects_a_token_with_no_seat(self, registry: RoomRegistry) -> None:
+        room = registry.create(GAME, "Ada").room
+
+        with pytest.raises(NotSeated):
+            registry.connect(room.id, "not a token")
+
+    def test_connecting_again_closes_the_old_connection(self, registry: RoomRegistry) -> None:
+        room, ada, ada_token = registry.create(GAME, "Ada")
+        _, _, old = registry.connect(room.id, ada_token)
+
+        _, _, new = registry.connect(room.id, ada_token)
+
+        assert old.closed
+        assert room.connections == {ada.player_id: new}
+
+    def test_disconnecting_marks_the_player_disconnected(self, registry: RoomRegistry) -> None:
+        room, ada, ada_token = registry.create(GAME, "Ada")
+        _, _, connection = registry.connect(room.id, ada_token)
+
+        registry.disconnect(room.id, ada.player_id, connection)
+
+        assert room.connections == {}
+
+    def test_a_replaced_connection_ending_changes_nothing(self, registry: RoomRegistry) -> None:
+        room, ada, ada_token = registry.create(GAME, "Ada")
+        _, _, old = registry.connect(room.id, ada_token)
+        _, _, new = registry.connect(room.id, ada_token)
+
+        registry.disconnect(room.id, ada.player_id, old)
+
+        assert room.connections == {ada.player_id: new}
+
+    def test_a_connection_ending_after_its_room_closed_changes_nothing(
+        self, registry: RoomRegistry
+    ) -> None:
+        room, ada, ada_token = registry.create(GAME, "Ada")
+        _, _, connection = registry.connect(room.id, ada_token)
+        registry.leave(room.id, ada_token)
+
+        registry.disconnect(room.id, ada.player_id, connection)
+
+        assert registry.rooms() == []
+
+    def test_leaving_closes_the_connection(self, registry: RoomRegistry) -> None:
+        room, _, ada_token = registry.create(GAME, "Ada")
+        registry.join(room.id, "Bo")
+        _, _, connection = registry.connect(room.id, ada_token)
+
+        registry.leave(room.id, ada_token)
+
+        assert connection.closed
+        assert room.connections == {}
+
+    def test_connections_change_only_through_the_room(self, registry: RoomRegistry) -> None:
+        # So that nothing can drop a connection without closing it.
+        room, ada, ada_token = registry.create(GAME, "Ada")
+        registry.connect(room.id, ada_token)
+
+        with pytest.raises(TypeError):
+            del room.connections[ada.player_id]  # type: ignore[attr-defined]
+
+    def test_a_room_with_a_connection_never_idles(
+        self, registry: RoomRegistry, clock: FakeClock
+    ) -> None:
+        room, _, ada_token = registry.create(GAME, "Ada")
+        registry.connect(room.id, ada_token)
+
+        clock.now += 10 * IDLE_SECONDS
+
+        assert registry.rooms() == [room]
+
+    def test_idle_time_counts_from_the_last_disconnect(
+        self, registry: RoomRegistry, clock: FakeClock
+    ) -> None:
+        room, ada, ada_token = registry.create(GAME, "Ada")
+        _, _, connection = registry.connect(room.id, ada_token)
+        clock.now += 10 * IDLE_SECONDS
+        registry.disconnect(room.id, ada.player_id, connection)
+
+        clock.now += IDLE_SECONDS - 1
+
+        assert registry.rooms() == [room]
