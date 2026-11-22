@@ -79,5 +79,15 @@ and 6 build on the site's rooms and client scaffold (see the site roadmap).
 2. Shot paths: starting at the shooter, direction, stopping at breaks.
 3. Battlefield: players, obstacles, and what a shot's path hits.
 4. Random battlefields: where players and obstacles are placed.
-5. Game rules on top of rooms: turn order, elimination, winning.
-6. UI: battlefield rendering, function input, turn flow.
+5. Game rules on top of rooms: turn order, elimination, winning, using
+   `random_battlefield` and `fire`. This step also decides how a room runs a
+   game, which every later game will reuse. Rooms keep seats, connections,
+   and presence; a game implements a small interface for:
+   - starting a game once the players are ready;
+   - taking a player's move, checking it, and working out what happens;
+   - sending players what they should see, which may differ between players
+     in some games;
+   - a player leaving, or going away, in the middle of a game.
+6. UI: battlefield rendering, function input, turn flow. The room page gets a
+   place for each game's own view, where it says "The game itself is coming
+   soon" today.
