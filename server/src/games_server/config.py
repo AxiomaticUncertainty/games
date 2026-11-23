@@ -28,6 +28,10 @@ class Settings:
     # The built client (client/dist). Unset in development, where Vite's dev
     # server serves the client instead.
     client_dir: Path | None = None
+    # Whether the session cookie is marked Secure, so browsers send it only
+    # over HTTPS. Off only for local development in Safari, which won't keep a
+    # Secure cookie on http://localhost as other browsers do.
+    secure_cookies: bool = True
 
     def __post_init__(self) -> None:
         if not is_password_hash(self.site_password_hash):
@@ -58,6 +62,7 @@ class Settings:
             host=env.get("HOST", cls.host),
             port=_parse_port(env.get("PORT", str(cls.port))),
             client_dir=Path(env["CLIENT_DIR"]) if "CLIENT_DIR" in env else None,
+            secure_cookies=_parse_bool(env, "SECURE_COOKIES", cls.secure_cookies),
         )
 
 
@@ -73,3 +78,12 @@ def _parse_port(raw: str) -> int:
         return int(raw)
     except ValueError:
         raise ConfigError(f"PORT must be an integer, got {raw!r}.") from None
+
+
+def _parse_bool(env: Mapping[str, str], name: str, default: bool) -> bool:
+    raw = env.get(name)
+    if raw is None:
+        return default
+    if raw.lower() in ("true", "false"):
+        return raw.lower() == "true"
+    raise ConfigError(f"{name} must be true or false, got {raw!r}.")

@@ -14,13 +14,20 @@ def test_optional_settings_have_defaults() -> None:
 
     assert settings.host == "127.0.0.1"
     assert settings.port == 8000
+    assert settings.secure_cookies is True
 
 
 def test_reads_every_setting_from_environment() -> None:
-    settings = Settings.from_env({**REQUIRED, "HOST": "0.0.0.0", "PORT": "9000"})
+    settings = Settings.from_env(
+        {**REQUIRED, "HOST": "0.0.0.0", "PORT": "9000", "SECURE_COOKIES": "false"}
+    )
 
     assert settings == Settings(
-        site_password_hash=HASH, session_secret="s" * 32, host="0.0.0.0", port=9000
+        site_password_hash=HASH,
+        session_secret="s" * 32,
+        host="0.0.0.0",
+        port=9000,
+        secure_cookies=False,
     )
 
 
@@ -47,6 +54,18 @@ def test_session_secret_must_be_long_enough() -> None:
 def test_rejects_non_numeric_port() -> None:
     with pytest.raises(ConfigError, match="PORT"):
         Settings.from_env({**REQUIRED, "PORT": "eighty"})
+
+
+@pytest.mark.parametrize(("value", "expected"), [("true", True), ("False", False)])
+def test_reads_secure_cookies(value: str, expected: bool) -> None:
+    assert Settings.from_env({**REQUIRED, "SECURE_COOKIES": value}).secure_cookies is expected
+
+
+@pytest.mark.parametrize("value", ["", "no", "0"])
+def test_secure_cookies_must_be_true_or_false(value: str) -> None:
+    # Strict, so a typo can't quietly turn Secure off, or leave it on.
+    with pytest.raises(ConfigError, match="SECURE_COOKIES"):
+        Settings.from_env({**REQUIRED, "SECURE_COOKIES": value})
 
 
 def test_secrets_are_hidden_from_repr() -> None:

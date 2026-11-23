@@ -22,7 +22,9 @@ _LOGIN_PAGE = Template(
 )
 
 
-def create_router(password_hash: str, tokens: SessionTokens, throttle: LoginThrottle) -> APIRouter:
+def create_router(
+    password_hash: str, tokens: SessionTokens, throttle: LoginThrottle, *, secure_cookies: bool
+) -> APIRouter:
     router = APIRouter()
 
     @router.get(LOGIN_PATH)
@@ -51,7 +53,7 @@ def create_router(password_hash: str, tokens: SessionTokens, throttle: LoginThro
             tokens.issue(),
             max_age=int(SESSION_LIFETIME.total_seconds()),
             httponly=True,  # page scripts can't read it
-            secure=True,  # HTTPS only; browsers also accept it on http://localhost
+            secure=secure_cookies,  # HTTPS only; see Settings.secure_cookies
             samesite="lax",  # not sent on cross-site form posts
         )
         return response
@@ -59,7 +61,7 @@ def create_router(password_hash: str, tokens: SessionTokens, throttle: LoginThro
     @router.post("/logout")
     def logout() -> Response:
         response = RedirectResponse(LOGIN_PATH, status_code=status.HTTP_303_SEE_OTHER)
-        response.delete_cookie(SESSION_COOKIE, httponly=True, secure=True, samesite="lax")
+        response.delete_cookie(SESSION_COOKIE, httponly=True, secure=secure_cookies, samesite="lax")
         return response
 
     return router

@@ -38,6 +38,7 @@ The server refuses to start if a required one is missing or invalid.
 | `HOST`           | `127.0.0.1` | Interface to bind to                                        |
 | `PORT`           | `8000`      | Port to listen on                                           |
 | `CLIENT_DIR`     | (unset)     | Built client to serve, e.g. `../client/dist`. Unset in development, where Vite serves the client |
+| `SECURE_COOKIES` | `true`      | Whether the session cookie is HTTPS-only. Set `false` only for local development in Safari (see below) |
 
 For local development, copy `.env.example` to `.env` (which git ignores), fill
 it in, and use the auto-reload command above.
@@ -49,8 +50,13 @@ so wrap it in single quotes in `.env` files and shell commands.
 
 Changing the password (that is, `SITE_PASSWORD_HASH`) or `SESSION_SECRET`
 logs everyone out. Running `hash-password` again with the same password also
-counts, since each hash is freshly salted. Session cookies are `Secure`,
-so outside localhost the site must be served over HTTPS.
+counts, since each hash is freshly salted.
+
+Session cookies are `Secure`, so outside localhost the site must be served
+over HTTPS. Chrome and Firefox keep a `Secure` cookie on `http://localhost`,
+but Safari doesn't: logging in there just brings back the login page. To
+develop in Safari, set `SECURE_COOKIES=false` in your `.env`. Never set it in
+production, where it would let the cookie travel unencrypted.
 
 ## Access control
 
