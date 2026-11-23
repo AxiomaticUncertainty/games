@@ -1,5 +1,7 @@
 """End-to-end behaviour of the password gate, through the real app."""
 
+from dataclasses import replace
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -59,6 +61,17 @@ def test_session_cookie_is_locked_down(client: TestClient) -> None:
     assert "httponly" in cookie
     assert "secure" in cookie
     assert "samesite=lax" in cookie
+
+
+def test_session_cookie_can_be_sent_over_http(settings: Settings) -> None:
+    # For Safari in local development: see Settings.secure_cookies.
+    app = create_app(replace(settings, secure_cookies=False))
+    with TestClient(app, base_url="http://testserver") as client:
+        response = client.post("/login", data={"password": "correct horse battery staple"})
+        cookie = response.history[0].headers["set-cookie"].lower()
+
+        assert "secure" not in cookie
+        assert client.get("/api/rooms").status_code == 200
 
 
 def test_wrong_password_is_rejected(client: TestClient) -> None:
